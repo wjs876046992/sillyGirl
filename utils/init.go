@@ -81,6 +81,9 @@ func init() {
 
 var GetDataHome = func() string {
 	if runtime.GOOS == "windows" {
+		if _, err := os.Stat(`C:\ProgramData\sillyplus\`); err != nil {
+			os.MkdirAll(`C:\ProgramData\sillyplus\`, os.ModePerm)
+		}
 		return `C:\ProgramData\sillyplus\`
 	} else {
 		if _, err := os.Stat(`/etc/sillyplus/`); err != nil {

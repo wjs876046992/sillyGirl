@@ -16,7 +16,7 @@
 
 ### 安装
 
-在 [releases](https://github.com/cdle/sillyplus/releases) 中找到合适自己系统版本的程序运行带 `-t` 可以开启终端机器人，直接与程序进行交互。
+在 [releases](https://github.com/cdle/sillyGirl/releases) 中找到合适自己系统版本的程序运行带 `-t` 可以开启终端机器人，直接与程序进行交互。
 
 ```shell
 ./sillyplus -t

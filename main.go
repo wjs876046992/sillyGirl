@@ -35,7 +35,7 @@ func main() {
 			}
 		}
 		if t {
-			core.Logs.Info("Terminal机器人已连接。")
+			core.Logs.Info("Terminal机器人已连接")
 			scanner := bufio.NewScanner(os.Stdin)
 			for scanner.Scan() {
 				data := scanner.Text()
@@ -48,7 +48,7 @@ func main() {
 			}
 			core.Logs.Info("Terminal机器人异常,请检查运行环境设置,如果是docker环境,请附加-it参数")
 		} else {
-			core.Logs.Info("Terminal机器人不可用，运行带-t参数即可启用。")
+			core.Logs.Info("Terminal机器人不可用，运行带-t参数即可启用")
 		}
 	}
 	select {}

@@ -172,3 +172,7 @@ func (sender *Strings) ReplaceEmojis(str string, f func([]string) string) string
 func (sender *Strings) ReplaceToEmojis(str string, pattern string) string {
 	return emoji.ReplaceToEmojis(str, pattern)
 }
+
+func (sender *Strings) ExtractAddress(input string) string {
+	return regexp.MustCompile(`http[s]?://[\w.]+:\d*`).FindString(input)
+}

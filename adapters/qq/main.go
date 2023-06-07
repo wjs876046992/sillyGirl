@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/cdle/sillyplus/core"
+	"github.com/cdle/sillyplus/core/logs"
+	"github.com/cdle/sillyplus/core/storage"
 	"github.com/cdle/sillyplus/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -103,7 +105,22 @@ func (qq *QQ) WriteJSON(ca CallApi) (string, error) {
 	return "", nil
 }
 
+var debug = qq.GetBool("debug", false)
+
 func init() {
+	storage.Watch(qq, "debug", func(old, new, key string) *storage.Final {
+		now := ""
+		if new == "true" {
+			now = "true"
+			debug = true
+		} else {
+			now = "false"
+			debug = false
+		}
+		return &storage.Final{
+			Now: now,
+		}
+	})
 	go func() {
 		core.GinApi(core.GET, "/qq/receive", func(c *gin.Context) {
 			auth := c.GetHeader("Authorization")
@@ -208,13 +225,16 @@ func init() {
 					Params: map[string]interface{}{},
 				})
 			}()
+
 			for {
 				_, data, err := ws.ReadMessage()
 				if err != nil {
 					ws.Close()
 					break
 				}
-				// fmt.Println(string(data))
+				if debug {
+					logs.Debug("QQ接收消息：", string(data))
+				}
 				{
 					res := &GroupList{}
 					json.Unmarshal(data, res)
@@ -245,9 +265,9 @@ func init() {
 
 				msg := &Message{}
 				json.Unmarshal(data, msg)
-				if msg.MessageType != "private" && adapter.IsAdapter(botID) {
-					continue
-				}
+				// if msg.MessageType != "private"} //&& adapter.IsAdapter(botID) {
+				// 	continue
+				// }
 				if msg.SelfID == msg.UserID {
 					continue
 				}
@@ -258,14 +278,18 @@ func init() {
 				content = strings.Replace(content, "&#91;", "[", -1)
 				content = strings.Replace(content, "&#93;", "]", -1)
 				content = strings.Trim(content, " ")
-				adapter.Receive(map[string]interface{}{
+				_msg := map[string]interface{}{
 					"user_id":    fmt.Sprint(msg.UserID),
 					"chat_id":    core.ChatID(msg.GroupID),
 					"user_name":  msg.Sender.Nickname,
 					"chat_name":  "",
 					"message_id": fmt.Sprint(msg.MessageID),
 					"content":    content,
-				})
+				}
+				if debug {
+					logs.Debug("QQ处理消息：", string(utils.JsonMarshal(_msg)))
+				}
+				adapter.Receive(msg)
 			}
 		})
 	}()

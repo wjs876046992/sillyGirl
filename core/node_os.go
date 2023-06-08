@@ -26,7 +26,7 @@ func getJsOs(vm *goja.Runtime, running func() bool) *goja.Object {
 	})
 	jsos.Set("readFileSync", func(path string) string {
 		// 读取文件内容
-		content, err := ioutil.ReadFile("example.txt")
+		content, err := ioutil.ReadFile(path)
 		if err != nil {
 			panic(Error(vm, err))
 		}

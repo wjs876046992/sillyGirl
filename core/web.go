@@ -66,10 +66,12 @@ func init() {
 	Server.Use(gzip.Gzip(gzip.DefaultCompression))
 	Server.GET("/api/file/:filename", FindFile)
 	Server.GET("/api/decode/:random", Base642Binary)
+
 	Server.GET("/api/plugins/download", func(c *gin.Context) {
 		uuid := c.Query("uuid")
 		for _, f := range Functions {
 			if f.UUID == uuid && f.Public {
+				plugin_downloads.Set(f.UUID, plugin_downloads.GetInt(f.UUID)+1)
 				c.String(200, publicScript(plugins.GetString(f.UUID)))
 				return
 			}
@@ -79,6 +81,7 @@ func init() {
 		uuid := c.Param("uuid")
 		for _, f := range Functions {
 			if f.UUID == uuid && f.Public {
+				plugin_downloads.Set(f.UUID, plugin_downloads.GetInt(f.UUID)+1)
 				c.String(200, publicScript(plugins.GetString(f.UUID)))
 				return
 			}

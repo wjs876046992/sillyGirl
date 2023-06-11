@@ -105,6 +105,8 @@ func initPluginList() {
 	// }
 }
 
+var plugin_downloads = MakeBucket("plugin_downloads")
+
 func initWebPluginList() {
 	storage.Watch(sillyGirl, "plugin_subcribe_addresses", func(old, new, key string) *storage.Final {
 		plugin_subcribe_addresses = new
@@ -187,6 +189,7 @@ func GetPublicResponse() *RequestPluginResult {
 	for _, f := range Functions {
 		if f.Public {
 			fs = append(fs, f)
+			f.Downloads = plugin_downloads.GetInt(f.UUID)
 		}
 	}
 	rr.Total = len(fs)

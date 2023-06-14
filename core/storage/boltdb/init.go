@@ -72,7 +72,7 @@ func Initsillyplus() storage.Bucket {
 	}
 
 	v := &Bucket{
-		name: "sillyplus",
+		name: "sillyGirl",
 	}
 	return v
 }

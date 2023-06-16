@@ -18,8 +18,6 @@ import (
 var sillyplus = core.MakeBucket("sillyplus")
 
 func main() {
-	loc, _ := time.LoadLocation("Asia/Shanghai")
-	time.Local = loc
 	core.Init()
 	if sillyplus.GetBool("anti_kasi") {
 		go utils.MonitorGoroutine()

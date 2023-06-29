@@ -15,11 +15,17 @@ import (
 	"github.com/cdle/sillyplus/utils"
 )
 
-var sillyplus = core.MakeBucket("sillyplus")
+var app = core.MakeBucket("app")
 
 func main() {
+	go func() {
+		ip, err := utils.GetPublicIP()
+		if err == nil {
+			app.Set("ip", ip)
+		}
+	}()
 	core.Init()
-	if sillyplus.GetBool("anti_kasi") {
+	if app.GetBool("anti_kasi") {
 		go utils.MonitorGoroutine()
 	}
 	d := false

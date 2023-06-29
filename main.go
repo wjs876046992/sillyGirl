@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"time"
 
-	_ "github.com/cdle/sillyplus/adapters/qq"
+	// _ "github.com/cdle/sillyplus/adapters/qq"
 	"github.com/cdle/sillyplus/adapters/web"
 	"github.com/cdle/sillyplus/core"
 

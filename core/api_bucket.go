@@ -191,11 +191,11 @@ func init() {
 				}
 				changes[bk] = changed
 
-				if ar[0] == "plugins" && changed &&  {
+				if ar[0] == "plugins" && changed {
 					go func(uuid string, v interface{}) {
 						defer recover()
 						content := v.(string)
-						if content == "" || content == "install"{
+						if content == "" || content == "install" {
 							return
 						}
 						_id := utils.GenUUID()

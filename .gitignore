@@ -32,3 +32,5 @@ core/dist
 test
 .sillyplus
 test*
+node_modules
+plugins

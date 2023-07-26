@@ -32,13 +32,14 @@ func initNodePlugins() {
 	root := utils.ExecPath + "/plugins"
 	plugins := []string{root}
 	os.Mkdir(root, 0755)
+	fmt.Println("root", root)
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		fmt.Println(path)
+		path = strings.ReplaceAll(path, "\\", "/")
 		if !strings.HasPrefix(path, utils.ExecPath+"/plugins/") {
 			return nil
 		}
 		files := strings.Split(strings.Replace(path, root+"/", "", 1), "/")
-		fmt.Println(files)
+		fmt.Println("files", files)
 		// var plugin_dir = false
 		// var plugin_index = false
 		switch len(files) {
@@ -76,6 +77,7 @@ func initNodePlugins() {
 				return
 			}
 			// fmt.Println(event.Name, "op", event.Op.String())
+			event.Name = strings.ReplaceAll(event.Name, "\\", "/")
 			files := strings.Split(strings.Replace(event.Name, root+"/", "", 1), "/")
 			var plugin_dir = false
 			var plugin_index = false

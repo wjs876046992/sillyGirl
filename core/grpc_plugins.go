@@ -33,10 +33,12 @@ func initNodePlugins() {
 	plugins := []string{root}
 	os.Mkdir(root, 0755)
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		fmt.Println(path)
 		if !strings.HasPrefix(path, utils.ExecPath+"/plugins/") {
 			return nil
 		}
 		files := strings.Split(strings.Replace(path, root+"/", "", 1), "/")
+		fmt.Println(files)
 		// var plugin_dir = false
 		// var plugin_index = false
 		switch len(files) {
@@ -91,6 +93,9 @@ func initNodePlugins() {
 					// fmt.Println("入口文件事件")
 				}
 				plugin_name = files[0]
+			}
+			if plugin_name == "." {
+				continue
 			}
 			switch event.Op.String() {
 			case "CREATE":

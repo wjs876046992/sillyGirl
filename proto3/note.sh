@@ -24,8 +24,8 @@ macos编译：
 cp /Users/a1-6/Code/sillyplus/proto3/dist/sillygirl.js /Users/a1-6/Code/node/node-v18.16.1/lib/sillygirl.js && cd /Users/a1-6/Code/node/node-v18.16.1 && ninja -C out/Release && cp out/Release/node /Users/a1-6/Code/nodes/node_darwin_arm64
 
 #压缩
-cd /Users/a1-6/Code/nodes/node_darwin_arm64 && zip node_darwin_arm64.zip node
-cd /Users/a1-6/Code/nodes/node_linux_amd64 && zip node_linux_amd64.zip node
+cd /Users/a1-6/Code/nodes/node_darwin_arm64
+cd /Users/a1-6/Code/nodes/node_linux_amd64
 
 ##
 git add . && git commit -m "x" && git push

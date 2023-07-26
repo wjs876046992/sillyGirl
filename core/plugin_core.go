@@ -113,16 +113,18 @@ func initPlugins() {
 		defer pluginLock.Unlock()
 		// fmt.Println("new", new, key)
 
-		if vv, ok := plugins_id.Load(key); ok {
-			filename := vv.(string)
-			if new == "" {
-				os.RemoveAll(filepath.Dir(filename))
-			} else if new != "install" {
-				fmt.Println("WriteFile", []byte(new))
-				os.WriteFile(filename, []byte(new), 0755)
-			}
-			return &storage.Final{
-				Now: "",
+		if new != "install" {
+			if vv, ok := plugins_id.Load(key); ok {
+				filename := vv.(string)
+				if new == "" {
+					os.RemoveAll(filepath.Dir(filename))
+				} else {
+					fmt.Println("WriteFile", []byte(new))
+					os.WriteFile(filename, []byte(new), 0755)
+				}
+				return &storage.Final{
+					Now: "",
+				}
 			}
 		}
 

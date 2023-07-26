@@ -120,7 +120,12 @@ func initPlugins() {
 					os.RemoveAll(filepath.Dir(filename))
 				} else {
 					fmt.Println("WriteFile", []byte(new))
-					os.WriteFile(filename, []byte(new), 0755)
+					err := os.WriteFile(filename, []byte(new), 0755)
+					if err != nil {
+						return &storage.Final{
+							Error: err,
+						}
+					}
 				}
 				return &storage.Final{
 					Now: "",

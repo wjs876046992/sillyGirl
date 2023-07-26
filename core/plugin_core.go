@@ -121,7 +121,6 @@ func initPlugins() {
 				fmt.Println("WriteFile", []byte(new))
 				os.WriteFile(filename, []byte(new), 0755)
 			}
-
 			return &storage.Final{
 				Now: "",
 			}

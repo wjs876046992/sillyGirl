@@ -29,13 +29,14 @@ var processes sync.Map
 
 func initNodePlugins() {
 	initLanguage()
-	root := utils.ExecPath + "/plugins"
+	root := strings.ReplaceAll(utils.ExecPath+"/plugins", "\\", "/")
 	plugins := []string{root}
 	os.Mkdir(root, 0755)
 	fmt.Println("root", root)
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		fmt.Println("path", path)
 		path = strings.ReplaceAll(path, "\\", "/")
-		if !strings.HasPrefix(path, utils.ExecPath+"/plugins/") {
+		if !strings.HasPrefix(path, root+"/") {
 			return nil
 		}
 		files := strings.Split(strings.Replace(path, root+"/", "", 1), "/")

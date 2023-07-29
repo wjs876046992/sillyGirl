@@ -186,7 +186,7 @@ func unzip(filename string, perm fs.FileMode, pkg bool) error {
 						cmd.Dir = dir
 						data, err := cmd.Output()
 						if err != nil {
-							console.Error("依赖添加失败：%v %s\n\n你可以尝试自救：\ncd %s\n%s install", err, string(data), dir, yarn)
+							console.Error("依赖添加失败：%v %s\n\n你可以尝试自救：\n将 %s 添加到环境变量\n进入插件目录：cd %s\n安装依赖：%s install", err, string(data), utils.ExecPath+"/language/node", dir, yarn)
 						} else {
 							console.Log(string(data))
 						}

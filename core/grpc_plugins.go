@@ -217,7 +217,7 @@ func AddNodePlugin(path, name string) error {
 	f.Suffix = ".js"
 	f.Type = "node"
 	f.Path = path
-	f.Handle = func(s common.Sender, _ func(vm *goja.Runtime)) interface{} {
+	f.Handle = func(s common.Sender, f func(vm *goja.Runtime)) interface{} {
 		console := &Console{UUID: uuid}
 		s.SetPluginID(uuid)
 		plt := s.GetImType()
@@ -253,6 +253,7 @@ func AddNodePlugin(path, name string) error {
 			for scanner.Scan() {
 				data := scanner.Text()
 				fmt.Println(data)
+
 				// if _, err := file.WriteString(data + "\n"); err != nil {
 				// 	fmt.Printf("写入文件失败：%v\n", err)
 				// }
@@ -262,23 +263,13 @@ func AddNodePlugin(path, name string) error {
 		go func() {
 			defer wg.Done()
 			scanner := bufio.NewScanner(stderr)
-			if f.OnStart {
-				for scanner.Scan() {
-					data := scanner.Text()
-					// lines = append(lines, data)
-					fmt.Println(data)
-					// if _, err := file.WriteString(data + "\n"); err != nil {
-					// 	fmt.Printf("写入文件失败：%v\n", err)
-					// }
-				}
-			} else {
-				// lines := []string{}
-				for scanner.Scan() {
-					data := scanner.Text()
-					fmt.Println(data)
-					// lines = append(lines, data)
-				}
-				// console.Error(strings.Join(lines, "\n"))
+			for scanner.Scan() {
+				data := scanner.Text()
+				fmt.Println(data)
+				console.Error(data)
+				// if _, err := file.WriteString(data + "\n"); err != nil {
+				// 	fmt.Printf("写入文件失败：%v\n", err)
+				// }
 			}
 		}()
 		processes.Store(cmd, s)

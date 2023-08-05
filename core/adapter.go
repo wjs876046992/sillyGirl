@@ -259,6 +259,10 @@ func (f *Factory) Fail() int {
 	return f.errorTimes
 }
 
+func (f *Factory) GetBotID() string {
+	return f.botid
+}
+
 func (f *Factory) GetBotId() string {
 	return f.botid
 }

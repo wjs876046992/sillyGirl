@@ -172,6 +172,7 @@ func (sender *SenderJsIplm) GetImType() string {
 func (sender *SenderJsIplm) GetPlatform() string {
 	return sender.Message.GetImType()
 }
+
 func (sender *SenderJsIplm) RecallMessage(p ...interface{}) {
 	sender.Message.RecallMessage(p...)
 }
@@ -306,6 +307,10 @@ func (sender *SenderJsIplm) Action(options map[string]interface{}) interface{} {
 		"result": result,
 		"error":  err,
 	}
+}
+
+func (sender *SenderJsIplm) DoAction(options map[string]interface{}) interface{} {
+	return sender.Action(options)
 }
 
 func (sender *SenderJsIplm) Reply(texts ...interface{}) interface{} {

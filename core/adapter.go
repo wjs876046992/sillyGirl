@@ -259,7 +259,7 @@ func (f *Factory) Fail() int {
 	return f.errorTimes
 }
 
-func (f *Factory) GetBotID() string {
+func (f *Factory) GetBotId() string {
 	return f.botid
 }
 

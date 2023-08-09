@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"sync"
+
 	"net"
 	"net/http"
 	"os"
@@ -88,24 +90,25 @@ func init() {
 	}
 }
 
+var once = new(sync.Once)
+
 var GetDataHome = func() string {
-	if runtime.GOOS == "windows" {
-		if _, err := os.Stat(`C:\ProgramData\sillyplus\`); err != nil {
-			os.MkdirAll(`C:\ProgramData\sillyplus\`, os.ModePerm)
+	home := os.Getenv("SILLYGIRL_DATA_PATH")
+	if home == "" {
+		if runtime.GOOS == "windows" {
+			home = `C:\ProgramData\sillyplus\`
+		} else if runtime.GOOS == "darwin" {
+			home = ExecPath + "/.sillyplus/"
+		} else {
+			home = `/etc/sillyplus/`
 		}
-		return `C:\ProgramData\sillyplus\`
-	} else if runtime.GOOS == "darwin" {
-		i := ExecPath + "/.sillyplus/"
-		if _, err := os.Stat(i); err != nil {
-			os.MkdirAll(i, os.ModePerm)
-		}
-		return i
-	} else {
-		if _, err := os.Stat(`/etc/sillyplus/`); err != nil {
-			os.MkdirAll(`/etc/sillyplus/`, os.ModePerm)
-		}
-		return `/etc/sillyplus/`
 	}
+	once.Do(func() {
+		if err := os.MkdirAll(home, os.ModePerm); err != nil {
+			fmt.Println(err)
+		}
+	})
+	return home
 }
 
 func KillProcess(pid int) error {
@@ -153,7 +156,7 @@ var getProcessName = func() string {
 }
 
 var GetPidFile = func() string {
-	return GetDataHome() + "sillyplus.pid"
+	return filepath.Join(GetDataHome(), "sillyGirl.pid")
 }
 
 func GetPidFromFile(pidFile string) (int, error) {

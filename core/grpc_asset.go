@@ -237,21 +237,25 @@ func unzip(filename string, perm fs.FileMode, pkg bool) error {
 		if top == "" {
 			top = strings.Split(file.Name, "/")[0]
 		}
+		// 忽略以 "__MACOSX/" 开头的文件
 		if strings.HasPrefix(file.Name, "__MACOSX/") {
 			continue
 		}
 		path := filepath.Join(filepath.Dir(filename), file.Name)
 		if file.FileInfo().IsDir() {
+			// 如果是目录则创建目录
 			err = os.MkdirAll(path, perm)
 			if err != nil {
 				return err
 			}
 		} else {
+			// 创建文件的父目录
 			err = os.MkdirAll(filepath.Dir(path), perm)
 			if err != nil {
 				return err
 			}
 			var de = func() error {
+				// 创建文件并解压缩数据
 				zipFile, err := file.Open()
 				if err != nil {
 					return err
@@ -273,7 +277,7 @@ func unzip(filename string, perm fs.FileMode, pkg bool) error {
 				de()
 			} else {
 				if pkg {
-					defer func() {
+					defer func() { // 安装依赖
 						pkgCmd, pkgName := GetPackageManager()
 						dir := utils.ExecPath + "/plugins/" + top
 						cmd := exec.Command(pkgCmd, "install")

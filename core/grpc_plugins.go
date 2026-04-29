@@ -246,16 +246,19 @@ func AddNodePlugin(path, name, class string) error {
 		var cmd *exec.Cmd
 		switch class {
 		case NODE:
-			bin = utils.ExecPath + "/language/node/node"
+			bin = GetNodeBin()
 			cmd = exec.Command(bin, path)
 		case PYTHON:
 			bin = "python3"
 			cmd = exec.Command(bin, "-u", path)
-			cmd.Env = append(cmd.Env, "PYTHONPATH=/Users/a1-6/Code/sillyplus/proto3")
+			cmd.Env = append(os.Environ(), "PYTHONPATH="+utils.ExecPath+"/proto3")
 		}
 
 		cmd.Dir = filepath.Dir(path)
 		RUNTIME_ID := utils.GenUUID()
+		if len(cmd.Env) == 0 {
+			cmd.Env = os.Environ()
+		}
 		cmd.Env = append(cmd.Env, "RUNTIME_ID="+RUNTIME_ID)
 		cmd.Env = append(cmd.Env, "PLUGIN_ID="+uuid)
 		// 获取标准输出和标准错误输出的管道

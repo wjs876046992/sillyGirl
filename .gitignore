@@ -39,3 +39,6 @@ plugins
 bin
 language
 .VSCodeCounter
+sillyGirl-*
+core/proto3/sillygirl*
+core/proto3/srpc*

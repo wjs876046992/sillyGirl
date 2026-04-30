@@ -57,6 +57,7 @@ jobs:
           node-version: 24
 
       - name: Build webpack bundle
+        shell: bash
         run: |
           cd proto3
           npm install

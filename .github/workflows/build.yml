@@ -130,13 +130,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: sillyGirl_linux_amd64
-          path: .
+          path: dist/
 
       - name: Download linux/arm64 binary
         uses: actions/download-artifact@v4
         with:
           name: sillyGirl_linux_arm64
-          path: .
+          path: dist/
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

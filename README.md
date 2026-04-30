@@ -148,7 +148,7 @@ if (!ns) {
 }
 ```
 
-### 开发 HTTP 接口
+### 开发 HTTP 接口（goja 插件）
 
 ```js
 /**
@@ -163,6 +163,119 @@ app.get("/helloWorld", function (req, res) {
 ```
 
 打开浏览器访问 `http://127.0.0.1:8080/helloWorld` ，当然地址根据实际情况，理论上可以看到接口返回的 `Hello world!` 。
+
+### 开发 HTTP 接口（Node.js 插件）
+
+从 v2 分支开始，Node.js 外挂插件可以通过 `@http` 注释声明 HTTP 路由，傻妞会自动启动反向代理把这些路由绑定到 8080 端口。
+
+#### 工作原理
+
+1. 傻妞加载插件时发现 `@http` 注释 → 自动分配一个随机端口（40000-50000）
+2. 设置环境变量 `HTTP_LISTEN_PORT` 后启动 Node 子进程（常驻运行）
+3. Node 插件在指定端口启动 HTTP 服务（express/http/koa 均可）
+4. 等待端口就绪后，向傻妞的 Gin 引擎注册反向代理路由
+5. 外部请求通过 8080 → 傻妞 → 反向代理 → Node 插件
+
+**不需要手动配置端口、不需要 Nginx 反代，一切都自动完成。**
+
+```js
+/**
+ * @name node-http-demo
+ * @title Node.js HTTP 路由示例
+ * @description 演示 Node 插件通过 @http 注册路由
+ * @version 1.0.0
+ * @author YourName
+ * @public false
+ * @admin false
+ * @disable false
+ * @service true
+ * @http GET /api/hello
+ * @http POST /api/echo
+ * @http GET /api/json
+ * @http GET /api/query
+ * @create_at 2099-01-01 12:10:49
+ */
+
+const http = require('http');
+const url = require('url');
+
+const port = parseInt(process.env.HTTP_LISTEN_PORT || '30000', 10);
+const server = http.createServer((req, res) => {
+    const parsed = url.parse(req.url, true);
+    const path = parsed.pathname;
+    const method = req.method;
+
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+
+        // GET /api/hello - 纯文本响应
+        if (method === 'GET' && path === '/api/hello') {
+            res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Hello from Node.js plugin! 🎉');
+            return;
+        }
+
+        // POST /api/echo - 回显请求
+        if (method === 'POST' && path === '/api/echo') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ method, path, query: parsed.query, body }));
+            return;
+        }
+
+        // GET /api/json - JSON 响应
+        if (method === 'GET' && path === '/api/json') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                success: true,
+                message: 'Hello from reverse proxy',
+                timestamp: Date.now(),
+            }));
+            return;
+        }
+
+        // GET /api/query?name=xxx - 查询参数
+        if (method === 'GET' && path === '/api/query') {
+            const name = parsed.query.name || 'World';
+            res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end(`你好，${name}！`);
+            return;
+        }
+
+        // 404
+        res.writeHead(404);
+        res.end('Not Found');
+    });
+});
+
+server.listen(port, '127.0.0.1', () => {
+    console.log(`[node-http-demo] HTTP server listening on ${port}`);
+});
+```
+
+#### 支持的 @http 语法
+
+| 示例 | 说明 |
+|------|------|
+| `@http GET /api/xxx` | 仅匹配 GET 请求 |
+| `@http POST /api/xxx` | 仅匹配 POST 请求 |
+| `@http ANY /api/xxx` | 匹配任意 HTTP 方法 |
+| `@http GET ^/api/user/\\d+` | 正则匹配路径（反向代理模式下暂不支持） |
+
+#### 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `HTTP_LISTEN_PORT` | 傻妞自动分配的可用端口 |
+| `PLUGIN_ID` | 当前插件的唯一标识 |
+
+#### 注意事项
+
+- 插件必须有 `@service true` 才会常驻运行（反向代理模式默认开启）
+- 如果 `@http` 标注了路由但缺少 `@service true`，傻妞会自动将其视为常驻服务
+- Node 插件可以使用原生 `http` 模块或 `express`、`koa`、`fastify` 等任意框架
+- 端口由傻妞自动分配，无需关心端口冲突
+- 插件进程意外退出时，反向代理路由不会被自动清理（需要重载插件或重启傻妞）
 
 ### 实现一个 HTTP 请求
 

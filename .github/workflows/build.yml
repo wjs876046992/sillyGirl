@@ -5,13 +5,13 @@ on:
     branches: [ v2.* ]
   pull_request:
     branches: [ v2.* ]
-  workflow_dispatch:
 
 env:
   IMAGE_NAME: ntwck/sillygirl
 
 jobs:
   build:
+    # PR 只做构建验证，合并后才做完整发布
     strategy:
       matrix:
         include:
@@ -57,6 +57,7 @@ jobs:
           node-version: 24
 
       - name: Build webpack bundle
+        shell: bash
         run: |
           cd proto3
           npm install
@@ -93,6 +94,7 @@ jobs:
   docker:
     needs: build
     runs-on: ubuntu-latest
+    # 仅在合并后运行，PR 不做 Docker
     if: github.event_name != 'pull_request'
 
     steps:
@@ -132,3 +134,56 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+  release:
+    needs: [build, docker]
+    runs-on: ubuntu-latest
+    # 仅在合并后运行，PR 不做 release
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate release tag and notes
+        id: release
+        shell: bash
+        run: |
+          TAG="v2.1-$(date +%Y%m%d-%H%M%S)"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          
+          # 生成发布说明
+          NOTES=$(cat <<'EOF'
+          ## 更新内容
+          
+          - Node.js 插件支持 @http 路由注册到傻妞 8080 服务（反向代理模式）
+          - 支持系统 Node.js（不再依赖远程下载的自定义 node）
+          - Webpack 打包 sillygirl 模块，提供更完整的 npm 生态支持
+          - Docker 多架构镜像（linux/amd64, linux/arm64）
+          
+          ## 使用方式
+          
+          详见 README.md
+          EOF
+          )
+          echo "notes<<DELIM" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "DELIM" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: ${{ steps.release.outputs.tag }} (Pre-release)
+          body: ${{ steps.release.outputs.notes }}
+          prerelease: true
+          files: |
+            artifacts/sillyGirl_linux_arm64/sillyGirl_linux_arm64
+            artifacts/sillyGirl_linux_amd64/sillyGirl_linux_amd64
+            artifacts/sillyGirl_darwin_amd64/sillyGirl_darwin_amd64
+            artifacts/sillyGirl_darwin_arm64/sillyGirl_darwin_arm64
+            artifacts/sillyGirl_windows_amd64/sillyGirl_windows_amd64.exe

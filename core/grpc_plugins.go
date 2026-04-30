@@ -201,6 +201,7 @@ func AddNodePlugin(path, name, class string) error {
 			CancelPluginWebs(uuid)
 			CancelPluginlistening(uuid)
 			CancelHttpListen(uuid)
+			StopNodeProxy(uuid)
 			remStatic(uuid)
 			storage.DisableHandle(uuid)
 			break
@@ -364,10 +365,18 @@ func AddNodePlugin(path, name, class string) error {
 		if rf == nil {
 			// console.Log("已加载 %s%s", f.Title, f.Suffix)
 		} else {
+			// 重载时先停止旧的代理
+			StopNodeProxy(uuid)
 			console.Log("已重载 %s%s", f.Title, f.Suffix)
 		}
 	}
 	AddCommand([]*common.Function{f})
+
+	// Node 插件有 @http 路由时自动启动反向代理
+	if len(f.Https) > 0 && class == NODE {
+		StartNodeProxy(f)
+	}
+
 	return nil
 }
 

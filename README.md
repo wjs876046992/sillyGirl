@@ -642,3 +642,9 @@ genUuid(): string; //生成uuid
 
 打开微信扫一扫，深入了解作者~
 ![](https://raw.githubusercontent.com/cdle/sillyGirl/main/appreciate.jpg)
+
+## 分支规划
+
+- `v2`: 上游原始代码，保持干净不动
+- `v2.x`（如 `v2.1-rebased`）: 新改动的基础分支，受保护
+- `feat/*`: 功能开发分支 → 通过 PR 合并到 `v2.x`

@@ -177,22 +177,32 @@ func StopAllNodeProxies() {
 	})
 }
 
-// getAvailablePort 获取可用端口
+// getAvailablePort 分配一个可用端口
+// 不做 net.Listen 探测（避免释放后被抢），直接用 usedPorts 避让
 func getAvailablePort() int {
 	portMutex.Lock()
 	defer portMutex.Unlock()
 
-	for port := proxyBasePort; port <= proxyMaxPort; port++ {
+	// 从随机偏移开始扫描，减少并发碰撞概率
+	start := proxyBasePort + int(time.Now().UnixNano()%100)*100
+	if start > proxyMaxPort-100 {
+		start = proxyBasePort
+	}
+
+	for port := start; port <= proxyMaxPort; port++ {
 		if _, used := usedPorts.Load(port); used {
 			continue
 		}
-		// 检查端口是否真的可用
-		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-		if err == nil {
-			ln.Close()
-			usedPorts.Store(port, true)
-			return port
+		usedPorts.Store(port, true)
+		return port
+	}
+	// 第一轮没找到，从头扫
+	for port := proxyBasePort; port < start; port++ {
+		if _, used := usedPorts.Load(port); used {
+			continue
 		}
+		usedPorts.Store(port, true)
+		return port
 	}
 	return 0
 }

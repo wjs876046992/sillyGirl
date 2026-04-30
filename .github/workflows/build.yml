@@ -148,7 +148,7 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   release:
-    needs: [build, docker]
+    needs: [build]
     runs-on: ubuntu-latest
     # 仅在合并后运行，PR 不做 release
     if: github.event_name != 'pull_request'
@@ -156,10 +156,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download linux/amd64
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: sillyGirl_linux_amd64
+          path: artifacts/
+
+      - name: Download linux/arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: sillyGirl_linux_arm64
+          path: artifacts/
+
+      - name: Download darwin/amd64
+        uses: actions/download-artifact@v4
+        with:
+          name: sillyGirl_darwin_amd64
+          path: artifacts/
+
+      - name: Download darwin/arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: sillyGirl_darwin_arm64
+          path: artifacts/
+
+      - name: Download windows/amd64
+        uses: actions/download-artifact@v4
+        with:
+          name: sillyGirl_windows_amd64
+          path: artifacts/
+
+      - name: List artifacts
+        run: find artifacts/ -type f -ls
 
       - name: Generate release tag and notes
         id: release
@@ -167,35 +195,27 @@ jobs:
         run: |
           TAG="v2.1-$(date +%Y%m%d-%H%M%S)"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          
-          # 生成发布说明
-          NOTES=$(cat <<'EOF'
-          ## 更新内容
-          
-          - Node.js 插件支持 @http 路由注册到傻妞 8080 服务（反向代理模式）
-          - 支持系统 Node.js（不再依赖远程下载的自定义 node）
-          - Webpack 打包 sillygirl 模块，提供更完整的 npm 生态支持
-          - Docker 多架构镜像（linux/amd64, linux/arm64）
-          
-          ## 使用方式
-          
-          详见 README.md
-          EOF
-          )
-          echo "notes<<DELIM" >> $GITHUB_OUTPUT
-          echo "$NOTES" >> $GITHUB_OUTPUT
-          echo "DELIM" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: ${{ steps.release.outputs.tag }} (Pre-release)
-          body: ${{ steps.release.outputs.notes }}
+          body: |
+            ## 更新内容
+
+            - Node.js 插件支持 @http 路由注册到傻妞 8080 服务（反向代理模式）
+            - 支持系统 Node.js（不再依赖远程下载的自定义 node）
+            - Webpack 打包 sillygirl 模块，提供更完整的 npm 生态支持
+            - Docker 多架构镜像（linux/amd64, linux/arm64）
+
+            ## 使用方式
+
+            详见 README.md
           prerelease: true
           files: |
-            artifacts/sillyGirl_linux_arm64/sillyGirl_linux_arm64
-            artifacts/sillyGirl_linux_amd64/sillyGirl_linux_amd64
-            artifacts/sillyGirl_darwin_amd64/sillyGirl_darwin_amd64
-            artifacts/sillyGirl_darwin_arm64/sillyGirl_darwin_arm64
-            artifacts/sillyGirl_windows_amd64/sillyGirl_windows_amd64.exe
+            artifacts/sillyGirl_linux_arm64
+            artifacts/sillyGirl_linux_amd64
+            artifacts/sillyGirl_darwin_amd64
+            artifacts/sillyGirl_darwin_arm64
+            artifacts/sillyGirl_windows_amd64.exe

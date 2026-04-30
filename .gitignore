@@ -42,3 +42,7 @@ language
 sillyGirl-*
 core/proto3/sillygirl*
 core/proto3/srpc*
+core/proto3/dist/
+
+# 构建依赖声明，无需锁定 npm 的 resolution
+proto3/package-lock.json

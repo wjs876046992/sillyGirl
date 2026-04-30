@@ -168,23 +168,7 @@ jobs:
           name: sillyGirl_linux_arm64
           path: artifacts/
 
-      - name: Download darwin/amd64
-        uses: actions/download-artifact@v4
-        with:
-          name: sillyGirl_darwin_amd64
-          path: artifacts/
 
-      - name: Download darwin/arm64
-        uses: actions/download-artifact@v4
-        with:
-          name: sillyGirl_darwin_arm64
-          path: artifacts/
-
-      - name: Download windows/amd64
-        uses: actions/download-artifact@v4
-        with:
-          name: sillyGirl_windows_amd64
-          path: artifacts/
 
       - name: List artifacts
         run: find artifacts/ -type f -ls
@@ -219,8 +203,5 @@ jobs:
             详见 README.md
           prerelease: true
           files: |
-            artifacts/sillyGirl_linux_arm64
             artifacts/sillyGirl_linux_amd64
-            artifacts/sillyGirl_darwin_amd64
-            artifacts/sillyGirl_darwin_arm64
-            artifacts/sillyGirl_windows_amd64.exe
+            artifacts/sillyGirl_linux_arm64

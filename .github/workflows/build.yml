@@ -3,8 +3,20 @@ name: Build
 on:
   push:
     branches: [ v2.* ]
+    paths-ignore:
+      - 'README.md'
+      - '**.md'
+      - '.gitignore'
+      - 'workflow.yaml'
+      - '.github/workflows/'
   pull_request:
     branches: [ v2.* ]
+    paths-ignore:
+      - 'README.md'
+      - '**.md'
+      - '.gitignore'
+      - 'workflow.yaml'
+      - '.github/workflows/'
 
 env:
   IMAGE_NAME: ntwck/sillygirl

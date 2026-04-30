@@ -62,8 +62,8 @@ func StartNodeProxy(f *common.Function) {
 		return
 	}
 
-	// 启动 Node 子进程
-	bin := utils.ExecPath + "/language/node/node"
+	// 启动 Node 子进程（优先系统 Node）
+	bin := GetNodeBin()
 	pluginPath := f.Path
 	cmd := exec.Command(bin, pluginPath)
 	cmd.Dir = filepath.Dir(pluginPath)

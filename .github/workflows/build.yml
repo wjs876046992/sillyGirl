@@ -1,0 +1,134 @@
+name: Build
+
+on:
+  push:
+    branches: [ v2.* ]
+  pull_request:
+    branches: [ v2.* ]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ntwck/sillygirl
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            ext: ""
+            upx: true
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            ext: ""
+            upx: true
+          - os: ubuntu-latest
+            goos: darwin
+            goarch: amd64
+            ext: ""
+            upx: false
+          - os: ubuntu-latest
+            goos: darwin
+            goarch: arm64
+            ext: ""
+            upx: false
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+            upx: false
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.20.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build webpack bundle
+        run: |
+          cd proto3
+          npm install
+          npx webpack
+          mkdir -p ../core/proto3/dist
+          cp dist/sillygirl.js ../core/proto3/dist/sillygirl.js
+
+      - name: Inject build time
+        shell: bash
+        run: |
+          n=$(date +%s%3N)
+          echo "package core" > core/compile_time.go
+          echo "var compiled_at = \"$n\"" >> core/compile_time.go
+
+      - name: Build
+        shell: bash
+        run: |
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go build -ldflags "-s -w" \
+            -o sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
+
+      - name: UPX compress (Linux only)
+        if: matrix.upx
+        run: |
+          sudo apt-get update && sudo apt-get install -y upx-ucl
+          upx sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
+
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download linux/amd64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: sillyGirl_linux_amd64
+          path: .
+
+      - name: Download linux/arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: sillyGirl_linux_arm64
+          path: .
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}

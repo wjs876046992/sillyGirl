@@ -33,7 +33,7 @@ RUN corepack enable \
 # Everything lives under /app — binary, plugins, language, config, data
 WORKDIR /app
 
-COPY dist/sillyGirl_linux_${TARGETARCH}${TARGETVARIANT} /app/sillyGirl
+COPY sillyGirl_linux_${TARGETARCH}${TARGETVARIANT} /app/sillyGirl
 
 RUN chmod +x /app/sillyGirl
 

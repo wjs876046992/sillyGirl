@@ -189,11 +189,16 @@ jobs:
       - name: List artifacts
         run: find artifacts/ -type f -ls
 
-      - name: Generate release tag and notes
+      - name: Generate release tag
         id: release
         shell: bash
         run: |
-          TAG="v2.1-$(date +%Y%m%d-%H%M%S)"
+          # 读取编译时间戳
+          COMPILE_TS=$(grep compiled_at core/compile_time.go 2>/dev/null | grep -o '"[^"]*"' | tr -d '"')
+          if [ -z "$COMPILE_TS" ]; then
+            COMPILE_TS=$(date +%s%3N)
+          fi
+          TAG="v2.1.0-$COMPILE_TS"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Create Release

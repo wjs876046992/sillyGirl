@@ -55,8 +55,8 @@ func StartNodeProxy(f *common.Function) {
 		return
 	}
 
-	// 分配端口
-	port := getAvailablePort()
+	// 分配端口（net.Listen 探测并保持占用，避免被抢）
+	port, portLn := getAvailablePort()
 	if port == 0 {
 		logs.Error("无法为插件 [%s] 分配端口", f.Title)
 		return
@@ -85,6 +85,10 @@ func StartNodeProxy(f *common.Function) {
 
 	if err := cmd.Start(); err != nil {
 		logs.Error("启动 Node 插件 [%s] 反向代理失败: %s", f.Title, err.Error())
+		if portLn != nil {
+			portLn.Close()
+		}
+		usedPorts.Delete(port)
 		return
 	}
 
@@ -93,7 +97,16 @@ func StartNodeProxy(f *common.Function) {
 	if !ready {
 		logs.Error("插件 [%s] HTTP 服务未在 %d 秒内就绪，已终止", f.Title, 5)
 		cmd.Process.Kill()
+		if portLn != nil {
+			portLn.Close()
+		}
+		usedPorts.Delete(port)
 		return
+	}
+
+	// Node 已绑定端口，释放 Go 端的保留 listener
+	if portLn != nil {
+		portLn.Close()
 	}
 
 	// 创建反向代理
@@ -178,33 +191,31 @@ func StopAllNodeProxies() {
 }
 
 // getAvailablePort 分配一个可用端口
-// 不做 net.Listen 探测（避免释放后被抢），直接用 usedPorts 避让
-func getAvailablePort() int {
+// 用 net.Listen 探测确保端口空闲，但暂不 Close 避免被抢
+// 返回 (端口号, listener)，调用方在确认 Node 绑定后 Close
+func getAvailablePort() (int, net.Listener) {
 	portMutex.Lock()
 	defer portMutex.Unlock()
 
-	// 从随机偏移开始扫描，减少并发碰撞概率
-	start := proxyBasePort + int(time.Now().UnixNano()%100)*100
-	if start > proxyMaxPort-100 {
-		start = proxyBasePort
+	for port := proxyBasePort; port <= proxyMaxPort; port++ {
+		if _, used := usedPorts.Load(port); used {
+			continue
+		}
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			usedPorts.Store(port, true)
+			return port, ln
+		}
 	}
+	return 0, nil
+}
 
-	for port := start; port <= proxyMaxPort; port++ {
-		if _, used := usedPorts.Load(port); used {
-			continue
-		}
-		usedPorts.Store(port, true)
-		return port
+// releaseReservedPort 释放保留的端口（Node 绑定成功后调用）
+func releaseReservedPort(port int, ln net.Listener) {
+	if ln != nil {
+		ln.Close()
 	}
-	// 第一轮没找到，从头扫
-	for port := proxyBasePort; port < start; port++ {
-		if _, used := usedPorts.Load(port); used {
-			continue
-		}
-		usedPorts.Store(port, true)
-		return port
-	}
-	return 0
+	usedPorts.Delete(port)
 }
 
 // waitForPort 等待端口就绪，超时返回 false

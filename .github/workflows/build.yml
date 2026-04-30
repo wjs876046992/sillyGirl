@@ -37,7 +37,7 @@ env:
 
 jobs:
   build:
-    # PR 只做构建验证，合并后才做完整发布
+    # PR 只构建 linux 两个平台验证，合并后全平台（含 darwin/windows）
     strategy:
       matrix:
         include:
@@ -51,23 +51,8 @@ jobs:
             goarch: arm64
             ext: ""
             upx: true
-          - os: ubuntu-latest
-            goos: darwin
-            goarch: amd64
-            ext: ""
-            upx: false
-          - os: ubuntu-latest
-            goos: darwin
-            goarch: arm64
-            ext: ""
-            upx: false
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-            ext: ".exe"
-            upx: false
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -99,46 +84,45 @@ jobs:
           echo "var compiled_at = \"$n\"" >> core/compile_time.go
 
       - name: Build
-        if: github.event_name != 'pull_request' || matrix.goarch == 'amd64'
         shell: bash
         run: |
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
-            go build -ldflags "-s -w" \
-            -o sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0             go build -ldflags "-s -w"             -o sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
 
-      - name: UPX compress (Linux only)
-        if: matrix.upx && (github.event_name != 'pull_request' || matrix.goarch == 'amd64')
+      - name: UPX compress
+        if: matrix.upx
         run: |
           sudo apt-get update && sudo apt-get install -y upx-ucl
           upx sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
 
       - name: Upload artifact
-        if: github.event_name != 'pull_request' || matrix.goarch == 'amd64'
         uses: actions/upload-artifact@v4
         with:
           name: sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}
           path: sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
 
+
   docker:
     needs: build
     runs-on: ubuntu-latest
-    # 仅在合并后运行，PR 不做 Docker
     if: github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download linux/amd64 binary
-        uses: actions/download-artifact@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          name: sillyGirl_linux_amd64
-          path: .
+          go-version: 1.20.2
 
-      - name: Download linux/arm64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: sillyGirl_linux_arm64
-          path: .
+      - name: Build linux/amd64 binary
+        shell: bash
+        run: |
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o sillyGirl_linux_amd64
+
+      - name: Build linux/arm64 binary
+        shell: bash
+        run: |
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o sillyGirl_linux_arm64
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

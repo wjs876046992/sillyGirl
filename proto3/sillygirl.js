@@ -351,6 +351,17 @@ class Bucket {
     constructor(name) {
         this.name = name;
     }
+    // CGI 模式下从预缓存读取，避免 gRPC 连接
+    _cgiGet(key) {
+        if (process.env.HTTP_REQUEST !== 'true' || !global.__CGI_BUCKETS__) {
+            return undefined;
+        }
+        const bucketData = global.__CGI_BUCKETS__[this.name];
+        if (!bucketData) return undefined;
+        const raw = bucketData[key];
+        if (raw === undefined) return undefined;
+        return this.transform(raw);
+    }
     transform(v) {
         if (!v) {
             return undefined;
@@ -393,10 +404,15 @@ class Bucket {
         return value;
     }
     async get(key, defaultValue = undefined) {
+        // CGI 模式下优先使用预缓存，避免 gRPC 连接失败
+        const cgiVal = this._cgiGet(key);
+        if (cgiVal !== undefined) {
+            return cgiVal;
+        }
         return new Promise((resolve, reject) => {
             client.BucketGet(new srpc_1.srpc.BucketKeyRequest({ name: this.name, key }), (err, resp) => {
                 if (err) {
-                    reject(err);
+                    resolve(defaultValue);
                 }
                 else {
                     resolve(this.transform(resp?.value) || defaultValue);
@@ -458,10 +474,14 @@ class Bucket {
         });
     }
     async keys() {
+        // CGI 模式下优先使用预缓存
+        if (process.env.HTTP_REQUEST === 'true' && global.__CGI_BUCKETS__ && global.__CGI_BUCKETS__[this.name]) {
+            return Object.keys(global.__CGI_BUCKETS__[this.name]);
+        }
         return new Promise((resolve, reject) => {
             client.BucketKeys(new srpc_1.srpc.BucketRequest({ name: this.name }), (err, resp) => {
                 if (err) {
-                    reject(err);
+                    resolve([]);
                 }
                 else {
                     resolve(resp?.keys ?? []);
@@ -753,20 +773,48 @@ if (process.env.HTTP_REQUEST === 'true') {
             return;
         }
 
+        // 存储 CGI 传递的 Bucket 配置（Go 端预读取的傻妞存储数据）
+        // 用于在无 gRPC 连接的 CGI 模式下也能获取配置
+        const cgiBuckets = httpReq._buckets || {};
+
         // 构建全局 req 对象 (兼容傻妞 goja Request)
         global.req = {
             method: httpReq.method || 'GET',
             path: httpReq.path || '/',
             url: httpReq.url || '',
-            query: httpReq.query || {},
+            query: processQueryParams(httpReq.query || {}),
             headers: httpReq.headers || {},
             body: httpReq.body || '',
             rawBody: httpReq.rawBody || '',
             ress: httpReq.ress || [],
             handled: false,
-            get: (key) => (httpReq.query || {})[key] || null,
-            param: (key) => (httpReq.query || {})[key] || null,
+            get: (key) => (processQueryParams(httpReq.query || {}))[key] || null,
+            param: (key) => (processQueryParams(httpReq.query || {}))[key] || null,
         };
+
+        // 改写 Bucket.get 方法，在 CGI 模式下优先使用预读取的数据
+        // 这样可以避免 gRPC 连接失败的问题
+        const _origBucketGet = require.cache && require.cache[require.resolve('./sillygirl')]
+            ? null : null; // 保存原方法在内置模式下不可行，使用 monkey patch
+        
+        // 设置 CGI 模式下的 Bucket 存根
+        // 在 CGI 模式下，Bucket 实例的 get() 方法会先查预缓存
+        global.__CGI_BUCKETS__ = cgiBuckets;
+
+        // 辅助函数：处理查询参数（Go 端传过来的是 map[string][]string）
+        function processQueryParams(q) {
+            if (!q || typeof q !== 'object') return {};
+            const result = {};
+            for (const key of Object.keys(q)) {
+                const val = q[key];
+                if (Array.isArray(val)) {
+                    result[key] = val[0] || '';
+                } else {
+                    result[key] = val;
+                }
+            }
+            return result;
+        }
 
         // 构建全局 res 对象 (兼容傻妞 goja Response)
         // 使用闭包保持状态

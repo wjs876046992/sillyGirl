@@ -602,6 +602,31 @@ func handleNodeHttpRequest(c *gin.Context, function *common.Function, req *Reque
 		reqData["ress"] = req.ress
 	}
 
+	// 预读取常用 Bucket 配置，供 CGI 模式下的 Node 插件使用
+	// 避免每次心跳都需要 gRPC 连接
+	bucketConfig := map[string]map[string]string{}
+	for _, bucketName := range []string{"notice"} {
+		b := MakeBucket(bucketName)
+		if b != nil {
+			keys, _ := b.Keys()
+			if len(keys) > 0 {
+				config := map[string]string{}
+				for _, key := range keys {
+					val := b.GetString(key)
+					if val != "" {
+						config[key] = val
+					}
+				}
+				if len(config) > 0 {
+					bucketConfig[bucketName] = config
+				}
+			}
+		}
+	}
+	if len(bucketConfig) > 0 {
+		reqData["_buckets"] = bucketConfig
+	}
+
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
 		logs.Error("序列化 HTTP 请求失败: %s", err.Error())

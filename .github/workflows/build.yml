@@ -3,20 +3,30 @@ name: Build
 on:
   push:
     branches: [ v2.* ]
-    paths-ignore:
-      - 'README.md'
-      - '**.md'
-      - '.gitignore'
-      - 'workflow.yaml'
-      - '.github/workflows/'
+    paths:
+      - 'core/**'
+      - 'proto3/**'
+      - 'main.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - '.dockerfile'
+      - 'Makefile'
+      - 'install.sh'
+      - '.github/workflows/build.yml'
   pull_request:
     branches: [ v2.* ]
-    paths-ignore:
-      - 'README.md'
-      - '**.md'
-      - '.gitignore'
-      - 'workflow.yaml'
-      - '.github/workflows/'
+    paths:
+      - 'core/**'
+      - 'proto3/**'
+      - 'main.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - '.dockerfile'
+      - 'Makefile'
+      - 'install.sh'
+      - '.github/workflows/build.yml'
 
 env:
   IMAGE_NAME: ntwck/sillygirl

@@ -107,7 +107,7 @@ jobs:
             -o sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
 
       - name: UPX compress (Linux only)
-        if: matrix.upx
+        if: matrix.upx && (github.event_name != 'pull_request' || matrix.goarch == 'amd64')
         run: |
           sudo apt-get update && sudo apt-get install -y upx-ucl
           upx sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}

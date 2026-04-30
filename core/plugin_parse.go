@@ -32,6 +32,7 @@ func pluginParse(script string, uuid string) (*common.Function, []func()) {
 	var onStart bool
 	var origin = "自定义"
 	var https = []*common.Http{}
+	var wss = []*common.Ws{}
 	var message *common.Reply
 	var FindAll bool
 	var hasForm bool
@@ -187,6 +188,15 @@ func pluginParse(script string, uuid string) (*common.Function, []func()) {
 			} else {
 				console.Warn("http param is not 2")
 			}
+		case "ws":
+			path := strings.TrimSpace(res[2])
+			if path != "" {
+				wss = append(wss, &common.Ws{
+					Path: path,
+				})
+			} else {
+				console.Warn("ws param is empty")
+			}
 		case "message":
 			ss := regexp.MustCompile(`[\S]+`).FindAllString(strings.TrimSpace(res[2]), -1)
 			if len(ss) > 1 {
@@ -260,6 +270,7 @@ func pluginParse(script string, uuid string) (*common.Function, []func()) {
 		Running:     onStart,
 		Reply:       message,
 		Https:       https,
+		Wss:         wss,
 		FindAll:     FindAll,
 		HasForm:     hasForm,
 		Carry:       carry,

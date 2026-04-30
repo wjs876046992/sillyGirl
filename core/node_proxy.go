@@ -17,18 +17,20 @@ import (
 	"github.com/cdle/sillyplus/core/logs"
 	"github.com/cdle/sillyplus/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
 // Node 插件反向代理管理器
 // 当 Node 插件声明 @http 路由时，自动分配端口、启动子进程、注册 Gin 反向代理
 
 type nodeProxyEntry struct {
-	UUID     string
-	Port     int
-	Cmd      *exec.Cmd
+	UUID      string
+	Port      int
+	Cmd       *exec.Cmd
 	RouteCount int
-	Proxy    *httputil.ReverseProxy
-	StopChan chan struct{}
+	Proxy     *httputil.ReverseProxy
+	TargetURL *url.URL
+	StopChan  chan struct{}
 }
 
 var (
@@ -45,7 +47,7 @@ var (
 // 3. 等待端口就绪
 // 4. 注册 Gin 反向代理路由
 func StartNodeProxy(f *common.Function) {
-	if f.Type != "node" || len(f.Https) == 0 {
+	if f.Type != "node" || (len(f.Https) == 0 && len(f.Wss) == 0) {
 		return
 	}
 
@@ -121,7 +123,10 @@ func StartNodeProxy(f *common.Function) {
 		w.Write([]byte("502 Bad Gateway: plugin unreachable"))
 	}
 
-	// 注册 Gin 路由
+	// 等待 Server 就绪（在 Web 路由注册前确保 Gin 已初始化）
+	waitForServer()
+
+	// 注册 HTTP 反向代理路由
 	for _, route := range f.Https {
 		registerProxyRoute(uuid, *route, proxy)
 	}
@@ -131,8 +136,9 @@ func StartNodeProxy(f *common.Function) {
 		UUID:       uuid,
 		Port:       port,
 		Cmd:        cmd,
-		RouteCount: len(f.Https),
+		RouteCount: len(f.Https) + len(f.Wss),
 		Proxy:      proxy,
+		TargetURL:  targetURL,
 		StopChan:   make(chan struct{}),
 	}
 	nodeProxies.Store(uuid, entry)
@@ -147,7 +153,15 @@ func StartNodeProxy(f *common.Function) {
 		}
 	}()
 
-	logs.Info("Node 插件 [%s] 反向代理就绪: 127.0.0.1:%d → %d 个路由", f.Title, port, len(f.Https))
+	// 等待 Server 就绪
+	waitForServer()
+
+	// 注册 WS 反向代理路由（需要 entry 中的 TargetURL）
+	for _, wsRoute := range f.Wss {
+		registerWsProxyRoute(uuid, wsRoute.Path, entry)
+	}
+
+	logs.Info("Node 插件 [%s] 反向代理就绪: 127.0.0.1:%d → %d 个路由", f.Title, port, len(f.Https)+len(f.Wss))
 }
 
 // StopNodeProxy 停止并清理 Node 插件反向代理
@@ -188,6 +202,17 @@ func StopAllNodeProxies() {
 		StopNodeProxy(key.(string))
 		return true
 	})
+}
+
+// waitForServer 等待 Gin Server 初始化（最多等 30 秒）
+func waitForServer() {
+	for i := 0; i < 300; i++ {
+		if Server != nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	logs.Warn("Gin Server 未在 30 秒内就绪，跳过反向代理路由注册")
 }
 
 // getAvailablePort 分配一个可用端口
@@ -234,6 +259,17 @@ func waitForPort(port int, timeout time.Duration) bool {
 
 // registerProxyRoute 注册单个反向代理路由到 Gin
 func registerProxyRoute(uuid string, route common.Http, proxy *httputil.ReverseProxy) {
+	// 等待 Server 就绪（最多等 30 秒）
+	for i := 0; i < 300; i++ {
+		if Server != nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if Server == nil {
+		logs.Warn("[registerProxyRoute] Server 未初始化，跳过路由注册: %s %s", route.Method, route.Path)
+		return
+	}
 	method := route.Method
 	path := route.Path
 
@@ -290,4 +326,80 @@ func (w *pluginLogWriter) Write(p []byte) (n int, err error) {
 		logs.Info("[插件 %s/%s] %s", w.uuid, w.stream, text)
 	}
 	return len(p), nil
+}
+
+// wsUpgrader WebSocket 升级器
+var wsUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+// registerWsProxyRoute 注册 WebSocket 反向代理路由
+func registerWsProxyRoute(uuid string, path string, entry *nodeProxyEntry) {
+	// 等待 Server 就绪（最多等 30 秒）
+	for i := 0; i < 300; i++ {
+		if Server != nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if Server == nil {
+		logs.Warn("[registerWsProxyRoute] Server 未初始化，跳过 WS 路由注册: %s", path)
+		return
+	}
+	handler := func(c *gin.Context) {
+		wsProxyHandler(c, entry)
+	}
+
+	Server.GET(path, handler)
+	logs.Debug("注册 WS 反向代理路由: GET %s → [%s]", path, uuid)
+}
+
+// wsProxyHandler 处理 WebSocket 反向代理
+func wsProxyHandler(c *gin.Context, entry *nodeProxyEntry) {
+	// 升级客户端连接
+	clientConn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		logs.Warn("WebSocket 升级失败: %s", err.Error())
+		return
+	}
+	defer clientConn.Close()
+
+	// 连接到 Node 后端
+	backendConn, _, err := websocket.DefaultDialer.Dial(entry.TargetURL.String(), nil)
+	if err != nil {
+		logs.Warn("WebSocket 后端连接失败: %s", err.Error())
+		return
+	}
+	defer backendConn.Close()
+
+	// 双向转发
+	done := make(chan struct{}, 2)
+
+	go func() {
+		defer func() { done <- struct{}{} }()
+		for {
+			msgType, msg, err := clientConn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if err := backendConn.WriteMessage(msgType, msg); err != nil {
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer func() { done <- struct{}{} }()
+		for {
+			msgType, msg, err := backendConn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if err := clientConn.WriteMessage(msgType, msg); err != nil {
+				return
+			}
+		}
+	}()
+
+	<-done
 }

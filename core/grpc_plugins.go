@@ -376,7 +376,7 @@ func AddNodePlugin(path, name, class string) error {
 	AddCommand([]*common.Function{f})
 
 	// Node 插件有 @http 路由时自动启动反向代理
-	if len(f.Https) > 0 && class == NODE {
+	if (len(f.Https) > 0 || len(f.Wss) > 0) && class == NODE {
 		StartNodeProxy(f)
 	}
 

@@ -36,6 +36,7 @@ type Function struct {
 	PluginPublisher
 	Running   bool        `json:"running"`
 	Https     []*Http     `json:"-"`
+	Wss       []*Ws       `json:"-"`
 	Reply     *Reply      `json:"-"`
 	Downloads int         `json:"downloads"`
 	HasForm   bool        `json:"has_form"`
@@ -60,6 +61,10 @@ type PluginPublisher struct {
 type Http struct { //GET /abc
 	Path   string
 	Method string
+}
+
+type Ws struct { // /ws/pagermaid
+	Path string
 }
 
 type Reply struct { //wx 123 1234

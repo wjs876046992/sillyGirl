@@ -674,10 +674,3 @@ docker buildx build \
   --push .
 ```
 
----
-
-## 🙏 项目赞助
-
-打开微信扫一扫，深入了解作者~
-
-![](https://raw.githubusercontent.com/cdle/sillyGirl/main/appreciate.jpg)

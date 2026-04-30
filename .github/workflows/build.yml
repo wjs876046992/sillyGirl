@@ -37,7 +37,6 @@ env:
 
 jobs:
   build:
-    # PR 只构建 linux 两个平台验证，合并后全平台（含 darwin/windows）
     strategy:
       matrix:
         include:
@@ -51,6 +50,21 @@ jobs:
             goarch: arm64
             ext: ""
             upx: true
+          - os: ubuntu-latest
+            goos: darwin
+            goarch: amd64
+            ext: ""
+            upx: false
+          - os: ubuntu-latest
+            goos: darwin
+            goarch: arm64
+            ext: ""
+            upx: false
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+            upx: false
 
     runs-on: ubuntu-latest
 
@@ -84,17 +98,19 @@ jobs:
           echo "var compiled_at = \"$n\"" >> core/compile_time.go
 
       - name: Build
+        if: github.event_name != 'pull_request' || (matrix.goos == 'linux' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64'))
         shell: bash
         run: |
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0             go build -ldflags "-s -w"             -o sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
 
       - name: UPX compress
-        if: matrix.upx
+        if: matrix.upx && (github.event_name != 'pull_request' || matrix.goarch == 'amd64')
         run: |
           sudo apt-get update && sudo apt-get install -y upx-ucl
           upx sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
 
       - name: Upload artifact
+        if: github.event_name != 'pull_request' || (matrix.goos == 'linux' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64'))
         uses: actions/upload-artifact@v4
         with:
           name: sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}
@@ -168,6 +184,8 @@ jobs:
           name: sillyGirl_linux_arm64
           path: artifacts/
 
+
+
       - name: Download darwin/amd64
         uses: actions/download-artifact@v4
         with:
@@ -219,8 +237,8 @@ jobs:
             详见 README.md
           prerelease: true
           files: |
-            artifacts/sillyGirl_linux_arm64
             artifacts/sillyGirl_linux_amd64
+            artifacts/sillyGirl_linux_arm64
             artifacts/sillyGirl_darwin_amd64
             artifacts/sillyGirl_darwin_arm64
             artifacts/sillyGirl_windows_amd64.exe

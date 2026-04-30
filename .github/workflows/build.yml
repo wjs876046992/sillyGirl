@@ -99,6 +99,7 @@ jobs:
           echo "var compiled_at = \"$n\"" >> core/compile_time.go
 
       - name: Build
+        if: github.event_name != 'pull_request' || matrix.goarch == 'amd64'
         shell: bash
         run: |
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
@@ -106,12 +107,13 @@ jobs:
             -o sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
 
       - name: UPX compress (Linux only)
-        if: matrix.upx
+        if: matrix.upx && (github.event_name != 'pull_request' || matrix.goarch == 'amd64')
         run: |
           sudo apt-get update && sudo apt-get install -y upx-ucl
           upx sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
 
       - name: Upload artifact
+        if: github.event_name != 'pull_request' || matrix.goarch == 'amd64'
         uses: actions/upload-artifact@v4
         with:
           name: sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}
@@ -130,13 +132,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: sillyGirl_linux_amd64
-          path: .
+          path: dist/
 
       - name: Download linux/arm64 binary
         uses: actions/download-artifact@v4
         with:
           name: sillyGirl_linux_arm64
-          path: .
+          path: dist/
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

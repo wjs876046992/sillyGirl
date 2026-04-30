@@ -148,7 +148,7 @@ if (!ns) {
 }
 ```
 
-### 开发 HTTP 接口
+### 开发 HTTP 接口（goja 插件）
 
 ```js
 /**
@@ -163,6 +163,73 @@ app.get("/helloWorld", function (req, res) {
 ```
 
 打开浏览器访问 `http://127.0.0.1:8080/helloWorld` ，当然地址根据实际情况，理论上可以看到接口返回的 `Hello world!` 。
+
+### 开发 HTTP 接口（Node.js 插件）
+
+从 v2 分支开始，Node.js 外挂插件也可以通过 `@http` 注释注册 HTTP 路由到傻妞自带的 8080 服务，就像 goja 插件用 `Express()` 一样简单。
+
+```js
+/**
+ * @name HTTP Demo
+ * @author YourName
+ * @version 1.0.0
+ * @http GET /api/hello
+ * @http POST /api/echo
+ */
+
+const { console } = require('sillygirl');
+
+if (process.env.HTTP_REQUEST === 'true') {
+    // req/res 全局对象由 sillygirl 模块自动注入
+    if (req.method === 'GET' && req.path === '/api/hello') {
+        res.send('Hello from Node.js plugin! 🎉');
+    }
+    
+    if (req.method === 'POST' && req.path === '/api/echo') {
+        res.json(req); // 回显请求数据
+    }
+    
+    process.exit(0);
+}
+```
+
+**工作原理**：当傻妞收到 HTTP 请求匹配到 Node 插件的 `@http` 路由时，Go 端会将请求信息序列化为 JSON，通过 stdin 输出给 Node 子进程（CGI 模式）。`sillygirl` 模块在 `require` 时自动同步读取 stdin，解析请求 JSON 并设置 `global.req` 和 `global.res` 对象。插件代码可直接使用 `req`/`res` 处理请求并返回响应。
+
+**支持的 `@http` 语法**：
+
+| 示例 | 说明 |
+|------|------|
+| `@http GET /api/xxx` | 仅匹配 GET 请求 |
+| `@http POST /api/xxx` | 仅匹配 POST 请求 |
+| `@http ANY /api/xxx` | 匹配任意 HTTP 方法 |
+| `@http GET ^/api/user/\d+` | 正则匹配路径 |
+
+**req 对象属性**：
+
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `req.method` | string | HTTP 方法（GET/POST/...） |
+| `req.path` | string | 请求路径 |
+| `req.url` | string | 完整请求 URL |
+| `req.query` | object | 查询参数（`{name: "xxx"}`） |
+| `req.headers` | object | 请求头 |
+| `req.body` | string | 请求体文本 |
+| `req.get(key)` | string | 获取查询参数 |
+| `req.param(key)` | string | 获取查询参数 |
+
+**res 对象方法**：
+
+| 方法 | 说明 |
+|------|------|
+| `res.send(data)` | 发送响应（自动判断 JSON/文本） |
+| `res.json(data)` | 发送 JSON 响应 |
+| `res.end(data)` | 结束响应 |
+| `res.redirect(url, status?)` | 重定向 |
+| `res.setHeader(key, value)` | 设置响应头 |
+| `res.write(data)` | 写入响应体 |
+| `res.writeHead(status, headers?)` | 设置状态码和响应头 |
+
+**注意**：CGI 模式下（`HTTP_REQUEST=true`），每次 HTTP 请求会启动一个新的 Node 子进程处理，处理完毕即退出。请避免在此模式下使用 `sender` 相关功能——`req`/`res` 是纯 HTTP 上下文，与消息适配器无关。
 
 ### 实现一个 HTTP 请求
 

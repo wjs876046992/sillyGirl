@@ -5,16 +5,20 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/cdle/sillyplus/core/common"
 	"github.com/cdle/sillyplus/core/logs"
 	"github.com/cdle/sillyplus/core/storage"
 	"github.com/cdle/sillyplus/utils"
@@ -243,15 +247,25 @@ func initWeb() {
 					}
 					if (matched || c.Request.URL.Path == path) && (c.Request.Method == method || "ANY" == method) {
 						req.handled = true
-						function.Handle(&CustomSender{
-							F: &Factory{
-								botplt: "http",
-							},
-						}, func(vm *goja.Runtime) {
-							vm.Set("res", res)
-							vm.Set("req", req)
-						})
-						goto HELL
+						if function.Type == "node" || function.Type == "python3" {
+							// Node/Python 插件：通过 CGI 模式处理
+							// 将 HTTP 请求序列化为 JSON，通过 stdin 传给子进程
+							handleNodeHttpRequest(c, function, req, &matched)
+							if matched {
+								return
+							}
+						} else {
+							// goja 插件：直接在 VM 中设置 req/res
+							function.Handle(&CustomSender{
+								F: &Factory{
+									botplt: "http",
+								},
+							}, func(vm *goja.Runtime) {
+								vm.Set("res", res)
+								vm.Set("req", req)
+							})
+							goto HELL
+						}
 					}
 				}
 			}
@@ -560,4 +574,169 @@ func getLocalIP() string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+// handleNodeHttpRequest 处理 Node/Python 插件的 HTTP 请求（CGI 模式）
+// 将 HTTP 请求序列化为 JSON，通过环境变量 + stdin 传给子进程
+// 读取子进程 stdout 的 JSON 响应，写回 HTTP 响应
+func handleNodeHttpRequest(c *gin.Context, function *common.Function, req *Request, handled *bool) {
+	// 读取请求体
+	bodyBytes, _ := ioutil.ReadAll(c.Request.Body)
+	c.Request.Body.Close()
+	// 重新创建 body 以便后续中间件使用
+	c.Request.Body = ioutil.NopCloser(bytes.NewReader(bodyBytes))
+
+	// 构建请求 JSON
+	reqData := map[string]interface{}{
+		"method":   c.Request.Method,
+		"path":     c.Request.URL.Path,
+		"url":      c.Request.URL.String(),
+		"query":    c.Request.URL.Query(),
+		"headers":  c.Request.Header,
+		"body":     string(bodyBytes),
+		"rawBody":  bodyBytes,
+	}
+
+	// 如果是正则路径，添加匹配结果
+	if len(req.ress) > 0 {
+		reqData["ress"] = req.ress
+	}
+
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		logs.Error("序列化 HTTP 请求失败: %s", err.Error())
+		c.String(500, "Internal Server Error")
+		*handled = true
+		return
+	}
+
+	// 确定可执行文件路径
+	bin := ""
+	if function.Type == "node" {
+		bin = GetNodeBin()
+	} else if function.Type == "python3" {
+		bin = "python3"
+	} else {
+		logs.Error("不支持的插件类型: %s", function.Type)
+		c.String(500, "Unsupported plugin type")
+		*handled = true
+		return
+	}
+
+	pluginPath := function.Path
+	// 创建子进程
+	cmd := exec.Command(bin, pluginPath)
+	cmd.Dir = filepath.Dir(pluginPath)
+	cmd.Env = append(os.Environ(),
+		"HTTP_REQUEST=true",
+		"PLUGIN_ID="+function.UUID,
+		"RUNTIME_ID="+utils.GenUUID(),
+	)
+
+	// 通过 stdin 传入请求 JSON
+	cmd.Stdin = bytes.NewReader(jsonData)
+
+	// 读取 stdout 作为响应
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		logs.Error("创建 stdout pipe 失败: %s", err.Error())
+		c.String(500, "Internal Server Error")
+		*handled = true
+		return
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		logs.Error("创建 stderr pipe 失败: %s", err.Error())
+		c.String(500, "Internal Server Error")
+		*handled = true
+		return
+	}
+
+	// 异步读取 stderr
+	go func() {
+		stderrData, _ := ioutil.ReadAll(stderr)
+		if len(stderrData) > 0 {
+			logs.Error("插件 [%s] stderr: %s", function.Title, string(stderrData))
+		}
+	}()
+
+	// 启动进程
+	err = cmd.Start()
+	if err != nil {
+		logs.Error("启动插件 [%s] 失败: %s", function.Title, err.Error())
+		c.String(500, "Plugin execution failed")
+		*handled = true
+		return
+	}
+
+	// 设置超时
+	timeout := time.After(30 * time.Second)
+	done := make(chan bool, 1)
+
+	var respBytes []byte
+	go func() {
+		respBytes, err = ioutil.ReadAll(stdout)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// 正常完成
+	case <-timeout:
+		cmd.Process.Kill()
+		logs.Warn("插件 [%s] HTTP 请求超时 (30s)", function.Title)
+		c.String(504, "Gateway Timeout")
+		*handled = true
+		return
+	}
+
+	err = cmd.Wait()
+	if err != nil {
+		// 忽略退出码错误，插件可能正确处理了请求
+	}
+
+	if len(respBytes) == 0 {
+		c.String(200, "")
+		*handled = true
+		return
+	}
+
+	// 解析响应 JSON
+	var httpResp struct {
+		Status     int               `json:"status"`
+		Headers    map[string]string `json:"headers"`
+		Body       string            `json:"body"`
+		IsJson     bool              `json:"isJson"`
+		IsRedirect bool              `json:"isRedirect"`
+	}
+
+	if err := json.Unmarshal(respBytes, &httpResp); err != nil {
+		// 如果不是 JSON，当作纯文本响应
+		c.String(200, string(respBytes))
+		*handled = true
+		return
+	}
+
+	// 设置响应头
+	for k, v := range httpResp.Headers {
+		c.Header(k, v)
+	}
+
+	if httpResp.IsRedirect {
+		c.Redirect(httpResp.Status, httpResp.Body)
+		*handled = true
+		return
+	}
+
+	if httpResp.IsJson {
+		c.Header("Content-Type", "application/json")
+	}
+
+	status := httpResp.Status
+	if status == 0 {
+		status = 200
+	}
+	c.String(status, httpResp.Body)
+	*handled = true
 }

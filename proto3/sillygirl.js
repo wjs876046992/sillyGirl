@@ -729,3 +729,120 @@ let console = {
     },
 };
 exports.console = console;
+
+// HTTP 请求处理模式 (CGI) — 同步方式
+// 当傻妞 Go 端检测到 Node 插件的 @http 路由命中时，
+// 会通过环境变量 HTTP_REQUEST=true + stdin JSON 传递请求数据
+// Node.js 模块加载时同步读取 stdin
+if (process.env.HTTP_REQUEST === 'true') {
+    try {
+        // 使用 fs.readFileSync 同步读取 stdin (fd 0)
+        const fs = require('fs');
+        const input = fs.readFileSync(0, 'utf8');
+        
+        let httpReq;
+        try {
+            httpReq = JSON.parse(input);
+        } catch (e) {
+            process.stdout.write(JSON.stringify({
+                status: 400,
+                headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+                body: 'Bad Request: invalid JSON'
+            }));
+            process.exit(0);
+            return;
+        }
+
+        // 构建全局 req 对象 (兼容傻妞 goja Request)
+        global.req = {
+            method: httpReq.method || 'GET',
+            path: httpReq.path || '/',
+            url: httpReq.url || '',
+            query: httpReq.query || {},
+            headers: httpReq.headers || {},
+            body: httpReq.body || '',
+            rawBody: httpReq.rawBody || '',
+            ress: httpReq.ress || [],
+            handled: false,
+            get: (key) => (httpReq.query || {})[key] || null,
+            param: (key) => (httpReq.query || {})[key] || null,
+        };
+
+        // 构建全局 res 对象 (兼容傻妞 goja Response)
+        // 使用闭包保持状态
+        const r = {
+            _status: 200,
+            _headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+            _body: '',
+            _isJson: false,
+            _isRedirect: false,
+        };
+
+        function _writeResponse() {
+            const resp = JSON.stringify({
+                status: r._status,
+                headers: r._headers,
+                body: r._body,
+                isJson: r._isJson,
+                isRedirect: r._isRedirect,
+            });
+            process.stdout.write(resp);
+            process.exit(0);
+        }
+
+        global.res = {
+            get status() { return r._status; },
+            set status(v) { r._status = v; },
+            get content() { return r._body; },
+            set content(v) { r._body = String(v); },
+            get isJson() { return r._isJson; },
+            set isJson(v) { r._isJson = v; },
+            get isRedirect() { return r._isRedirect; },
+            set isRedirect(v) { r._isRedirect = v; },
+            setHeader: (key, value) => { r._headers[key] = value; },
+            write: (data) => { r._body += String(data); },
+            writeHead: (status, headers) => {
+                r._status = status;
+                if (headers) Object.assign(r._headers, headers);
+            },
+            end: (data) => {
+                if (data) r._body = String(data);
+                _writeResponse();
+            },
+            json: (data) => {
+                r._isJson = true;
+                r._headers['Content-Type'] = 'application/json';
+                r._body = JSON.stringify(data);
+                _writeResponse();
+            },
+            redirect: (url, status = 302) => {
+                r._isRedirect = true;
+                r._status = status;
+                r._headers['Location'] = url;
+                _writeResponse();
+            },
+            send: (data) => {
+                if (typeof data === 'object') {
+                    r._isJson = true;
+                    r._headers['Content-Type'] = 'application/json';
+                    r._body = JSON.stringify(data);
+                } else {
+                    r._body = String(data);
+                }
+                _writeResponse();
+            },
+            get statusCode() { return r._status; },
+            set statusCode(v) { r._status = v; },
+        };
+
+        // 标记为已处理，插件代码会正常执行并使用 req/res
+        // 如果插件代码没有调用 res.send/json/end 等，需要手动兜底
+    } catch (e) {
+        process.stdout.write(JSON.stringify({
+            status: 500,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+            body: 'Internal Error: ' + String(e.message || e)
+        }));
+        process.exit(0);
+    }
+}

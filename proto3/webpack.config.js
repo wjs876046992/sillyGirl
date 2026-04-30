@@ -27,7 +27,7 @@ module.exports = {
       dns: false,
       domain: false,
       events: false,
-      fs: false,
+      // fs: false,  // 去掉，HTTP CGI 模式需要 fs.readFileSync 同步读 stdin
       http: false,
       http2: false,
       https: false,

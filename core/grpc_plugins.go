@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -281,8 +282,10 @@ func AddNodePlugin(path, name, class string) error {
 			cmd.Env = append(os.Environ(), "PYTHONPATH="+utils.ExecPath+"/proto3")
 		}
 
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-		setChildPdeathsig(cmd.SysProcAttr)
+		// Linux: Pdeathsig 让内核在父进程退出时自动 SIGTERM 子进程
+		if runtime.GOOS == "linux" {
+			cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
+		}
 		cmd.Dir = filepath.Dir(path)
 		RUNTIME_ID := utils.GenUUID()
 		if len(cmd.Env) == 0 {

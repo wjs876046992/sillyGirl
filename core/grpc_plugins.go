@@ -203,6 +203,21 @@ func AddNodePlugin(path, name, class string) error {
 			CancelHttpListen(uuid)
 			StopNodeProxy(uuid)
 			remStatic(uuid)
+			// 终止旧的 node/python 进程
+			processes.Range(func(key, value any) bool {
+				p := key.(*exec.Cmd)
+				s := value.(common.Sender)
+				if s.GetPluginID() == uuid {
+					func() {
+						defer func() { recover() }()
+						if p.Process != nil {
+							p.Process.Kill()
+							processes.Delete(key)
+						}
+					}()
+				}
+				return true
+			})
 			storage.DisableHandle(uuid)
 			break
 		}

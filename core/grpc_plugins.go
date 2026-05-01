@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cdle/sillyplus/core/common"
@@ -269,6 +270,7 @@ func AddNodePlugin(path, name, class string) error {
 			cmd.Env = append(os.Environ(), "PYTHONPATH="+utils.ExecPath+"/proto3")
 		}
 
+		cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
 		cmd.Dir = filepath.Dir(path)
 		RUNTIME_ID := utils.GenUUID()
 		if len(cmd.Env) == 0 {

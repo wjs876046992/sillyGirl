@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	// _ "github.com/cdle/sillyplus/adapters/qq"
@@ -107,7 +109,13 @@ func main() {
 			// core.Logs.Info("Terminal机器人不可用，运行带-t参数即可启用")
 		}
 	}
-	select {}
+	// 优雅退出：监听 SIGTERM/SIGINT，收到后退出进程
+	// 作为 Docker PID 1 时尤为重要，否则 docker stop 会等 10 秒后 SIGKILL
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	sig := <-sigCh
+	fmt.Printf("\n收到信号 %v，正在退出...\n", sig)
+	os.Exit(0)
 }
 
 //  git add . && git commit -m "x" && git push

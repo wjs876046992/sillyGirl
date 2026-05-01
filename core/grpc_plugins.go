@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cdle/sillyplus/core/common"
@@ -203,6 +204,32 @@ func AddNodePlugin(path, name, class string) error {
 			CancelHttpListen(uuid)
 			StopNodeProxy(uuid)
 			remStatic(uuid)
+			// 终止旧的 node/python 进程
+			processes.Range(func(key, value any) bool {
+				p := key.(*exec.Cmd)
+				s := value.(common.Sender)
+				if s.GetPluginID() == uuid {
+					func() {
+						defer func() { recover() }()
+						if p.Process != nil {
+							p.Process.Signal(syscall.SIGTERM)
+							processes.Delete(key)
+							// 3秒后强制SIGKILL
+							go func(pid int) {
+								time.Sleep(3 * time.Second)
+								func() {
+									defer func() { recover() }()
+									proc, _ := os.FindProcess(pid)
+									if proc != nil {
+										proc.Kill()
+									}
+								}()
+							}(p.Process.Pid)
+						}
+					}()
+				}
+				return true
+			})
 			storage.DisableHandle(uuid)
 			break
 		}
@@ -254,6 +281,8 @@ func AddNodePlugin(path, name, class string) error {
 			cmd.Env = append(os.Environ(), "PYTHONPATH="+utils.ExecPath+"/proto3")
 		}
 
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+		setChildPdeathsig(cmd.SysProcAttr)
 		cmd.Dir = filepath.Dir(path)
 		RUNTIME_ID := utils.GenUUID()
 		if len(cmd.Env) == 0 {

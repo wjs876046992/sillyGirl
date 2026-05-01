@@ -34,6 +34,7 @@ var plugin_list = []*common.Function{}
 
 var cdle_sublink = `
 link://T4EywWN46ztYBhHNdOl6TjEq/FHESPN1WFuDzv+cZCV2fhsy7n2wjHP4slqkvU259/bne2aNgoeM3TQI3OlA9W1RmGhVf2vIZWuLbNwaY+j/0mZCineppkVPWYGNsp7g
+link://T4EywWN46ztYBhHNdOl6ToAULJEEZwZpWcVEfUd0fIacE+DQBmx/6Dx4OAxDdbVwKFGtZCa215sUBPrUuskNZ5COlCCEyBwu7NY2m8/8X1lcqTDFFyaTnTeAMFidILwd
 //大灰机
 link://T4EywWN46ztYBhHNdOl6ThvHulsS6Fo5vRI+WFDJEtMXOScYg8z+dTEsiDC6yxMYc9hIUl7YBc0Z4Oqhyf86njlfjjC7OVT2O6xmsVQklX6kiOV6gbnk8Q42rT198viP
 //季春二九

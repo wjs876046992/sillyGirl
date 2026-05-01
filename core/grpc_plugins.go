@@ -212,8 +212,19 @@ func AddNodePlugin(path, name, class string) error {
 					func() {
 						defer func() { recover() }()
 						if p.Process != nil {
-							p.Process.Kill()
+							p.Process.Signal(syscall.SIGTERM)
 							processes.Delete(key)
+							// 3秒后强制SIGKILL
+							go func(pid int) {
+								time.Sleep(3 * time.Second)
+								func() {
+									defer func() { recover() }()
+									proc, _ := os.FindProcess(pid)
+									if proc != nil {
+										proc.Kill()
+									}
+								}()
+							}(p.Process.Pid)
 						}
 					}()
 				}

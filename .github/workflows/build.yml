@@ -31,6 +31,13 @@ on:
       - 'Makefile'
       - 'install.sh'
       - '.github/workflows/build.yml'
+  # 手动触发：发布正式版时补传二进制文件到指定 release
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag（留空则自动生成 v2.1.0-时间戳）'
+        required: false
+        type: string
 
 env:
   IMAGE_NAME: ntwck/sillygirl
@@ -166,7 +173,7 @@ jobs:
   release:
     needs: [build]
     runs-on: ubuntu-latest
-    # 仅在合并后运行，PR 不做 release
+    # 仅在合并后运行，PR / workflow_dispatch 不做 release
     if: github.event_name != 'pull_request'
 
     steps:
@@ -183,8 +190,6 @@ jobs:
         with:
           name: sillyGirl_linux_arm64
           path: artifacts/
-
-
 
       - name: Download darwin/amd64
         uses: actions/download-artifact@v4
@@ -207,35 +212,33 @@ jobs:
       - name: List artifacts
         run: find artifacts/ -type f -ls
 
-      - name: Generate release tag
+      - name: Determine tag name
         id: release
         shell: bash
         run: |
-          # 读取编译时间戳
-          COMPILE_TS=$(grep compiled_at core/compile_time.go 2>/dev/null | grep -o '"[^"]*"' | tr -d '"')
-          if [ -z "$COMPILE_TS" ]; then
-            COMPILE_TS=$(date +%s%3N)
+          MANUAL_TAG="${{ inputs.release_tag }}"
+          if [ -n "$MANUAL_TAG" ]; then
+            echo "tag=$MANUAL_TAG" >> $GITHUB_OUTPUT
+            echo "mode=update" >> $GITHUB_OUTPUT
+          else
+            COMPILE_TS=$(grep compiled_at core/compile_time.go 2>/dev/null | grep -o '"[^"]*"' | tr -d '"')
+            if [ -z "$COMPILE_TS" ]; then
+              COMPILE_TS=$(date +%s%3N)
+            fi
+            TAG="v2.1.0-$COMPILE_TS"
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+            echo "mode=create" >> $GITHUB_OUTPUT
           fi
-          TAG="v2.1.0-$COMPILE_TS"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Create Release
+      - name: Create or Update Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
-          name: ${{ steps.release.outputs.tag }} (Pre-release)
+          name: ${{ steps.release.outputs.tag }}
           body: |
-            ## 更新内容
-
-            - Node.js 插件支持 @http 路由注册到傻妞 8080 服务（反向代理模式）
-            - 支持系统 Node.js（不再依赖远程下载的自定义 node）
-            - Webpack 打包 sillygirl 模块，提供更完整的 npm 生态支持
-            - Docker 多架构镜像（linux/amd64, linux/arm64）
-
-            ## 使用方式
-
-            详见 README.md
-          prerelease: true
+            由 CI 自动构建的傻妞二进制版本。
+          prerelease: ${{ steps.release.outputs.mode == 'create' && 'true' || 'false' }}
+          fail_on_unmatched_files: false
           files: |
             artifacts/sillyGirl_linux_amd64
             artifacts/sillyGirl_linux_arm64

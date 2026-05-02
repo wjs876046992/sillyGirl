@@ -235,8 +235,8 @@ jobs:
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: ${{ steps.release.outputs.tag }}
-          body: |
-            由 CI 自动构建的傻妞二进制版本。
+          # 仅在创建新 release 时设置 body，更新已有 release 时不覆盖已有说明
+          body: ${{ steps.release.outputs.mode == 'create' && '由 CI 自动构建的傻妞二进制版本。' || '' }}
           prerelease: ${{ steps.release.outputs.mode == 'create' && 'true' || 'false' }}
           fail_on_unmatched_files: false
           files: |

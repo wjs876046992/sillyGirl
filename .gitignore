@@ -46,3 +46,4 @@ core/proto3/dist/
 
 # 构建依赖声明，无需锁定 npm 的 resolution
 proto3/package-lock.json
+sillyplus-linux-amd64

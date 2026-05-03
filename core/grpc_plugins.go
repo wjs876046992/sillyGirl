@@ -174,9 +174,7 @@ func nameUuid(name string) string {
 }
 
 func isNameUuid(uuid string) bool {
-	// UUID 格式：下划线分割或标准 8-4-4-4-12 格式
-	return strings.Contains(uuid, "_") ||
-		(len(uuid) == 36 && strings.Count(uuid, "-") == 4)
+	return strings.Contains(uuid, "_")
 }
 
 func AddNodePlugin(path, name, class string) error {

@@ -5,19 +5,15 @@
 #   docker run -d \
 #     --name sillygirl \
 #     -p 8080:8080 \
-#     -v /host/path:/app \
+#     -v /host/data/path:/data \
 #     ntwck/sillygirl:latest
 #
-# Everything lives under /app:
-#   /app/sillyGirl         — 可执行文件
-#   /app/plugins/          — 插件目录（可映射）
-#   /app/node_modules/     — 插件 node 依赖
-#   /app/.sillyplus/       — 数据目录（DB, 缓存等，可映射）
-#
-# 挂载 /app 即可持久化所有数据。
-# 如需精细控制，可分别映射子目录：
-#   -v /host/plugins:/app/plugins
-#   -v /host/data:/app/.sillyplus
+# Binary at /sillyGirl (outside volume mount point).
+# Data at /data — plugins, DB, config, all inside the volume.
+#   /data/sillyGirl       — 软链到 /sillyGirl
+#   /data/plugins/        — 插件目录
+#   /data/node_modules/   — 插件 node 依赖
+#   /data/.sillyplus/     — 数据目录（DB, 缓存等）
 
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -38,15 +34,20 @@ LABEL org.opencontainers.image.architecture="${TARGETARCH}/${TARGETVARIANT}"
 RUN corepack enable \
     && corepack prepare yarn@1.22 --activate
 
-# Everything lives under /app — binary, plugins, data
-WORKDIR /app
+# Copy binary to /sillyGirl (outside volume mount point)
+COPY sillyGirl_linux_${TARGETARCH}${TARGETVARIANT} /sillyGirl
+RUN chmod +x /sillyGirl
 
-COPY sillyGirl_linux_${TARGETARCH}${TARGETVARIANT} /app/sillyGirl
+# Workdir is /data (persistent data volume)
+WORKDIR /data
 
-RUN chmod +x /app/sillyGirl
+# Entrypoint: link binary into /data so ExecPath works,
+# set data dir to /data, then exec.
+RUN printf '#!/bin/sh\nln -sf /sillyGirl /data/sillyGirl\nexport SILLYGIRL_DATA_PATH=/data\nexec /sillyGirl "$@"\n' > /docker-entrypoint.sh && \
+    chmod +x /docker-entrypoint.sh
 
 EXPOSE 8080
 
-VOLUME ["/app"]
+VOLUME ["/data"]
 
-ENTRYPOINT ["/app/sillyGirl"]
+ENTRYPOINT ["/docker-entrypoint.sh"]

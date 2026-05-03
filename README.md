@@ -58,7 +58,7 @@
 docker run -d \
   --name sillygirl \
   -p 8080:8080 \
-  -v $(pwd)/sillygirl-data:/app \
+  -v $(pwd)/sillygirl-data:/data \
   --restart unless-stopped \
   ntwck/sillygirl:latest
 ```
@@ -66,13 +66,13 @@ docker run -d \
 | 参数 | 说明 |
 |------|------|
 | `-p 8080:8080` | Web 管理端口，按需修改 |
-| `-v $(pwd)/sillygirl-data:/app` | 持久化目录（插件、配置、数据都在这里） |
+| `-v $(pwd)/sillygirl-data:/data` | 持久化目录（插件、数据都在这里） |
 | `--restart unless-stopped` | 容器退出后自动重启 |
 
 **带终端交互启动：**
 
 ```bash
-docker exec -it sillygirl /app/sillyGirl -t
+docker exec -it sillygirl /sillyGirl -t
 ```
 
 **查看日志：**
@@ -87,7 +87,9 @@ docker logs -f sillygirl
 docker pull ntwck/sillygirl:${{ github.sha }}
 ```
 
-> 所有文件（可执行文件、插件、配置、数据库）都位于 `/app` 目录下，挂载即可实现完整持久化。支持 `linux/amd64` 和 `linux/arm64` 架构。
+> 二进制文件位于 `/sillyGirl`（不被卷覆盖），持久化数据位于 `/data`。
+> 只需挂载 `/data` 即可持久化全部数据（插件、配置、数据库）。
+> 支持 `linux/amd64` 和 `linux/arm64` 架构。
 
 ### 直接下载运行
 
@@ -99,9 +101,20 @@ docker pull ntwck/sillygirl:${{ github.sha }}
 
 程序首次运行会自动创建以下目录结构：
 
+直接运行：
 ```
 sillyGirl/
 ├── sillyGirl              # 可执行文件
+├── plugins/               # 插件目录
+├── language/              # Node.js 运行时
+├── node_modules/          # 内置 sillygirl 模块
+└── .sillyplus/            # 配置及数据存储
+```
+
+Docker 运行（挂载 `/data`）：
+```
+/data/
+├── sillyGirl              # 软链 -> /sillyGirl
 ├── plugins/               # 插件目录
 ├── language/              # Node.js 运行时
 ├── node_modules/          # 内置 sillygirl 模块

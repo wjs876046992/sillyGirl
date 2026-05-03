@@ -100,7 +100,7 @@ var GetDataHome = func() string {
 		} else if runtime.GOOS == "darwin" {
 			home = ExecPath + "/.sillyplus/"
 		} else {
-			home = `/etc/sillyplus/`
+			home = ExecPath + "/.sillyplus/"
 		}
 	}
 	once.Do(func() {

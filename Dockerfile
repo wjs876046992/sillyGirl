@@ -5,12 +5,19 @@
 #   docker run -d \
 #     --name sillygirl \
 #     -p 8080:8080 \
-#     -v /host/data/path:/data \
+#     -v /host/path:/app \
 #     ntwck/sillygirl:latest
 #
-# Binary at /sillyGirl (outside mount).
-# Data at /data/plugins, /data/data, etc. (persistent volume).
-# Entrypoint ensures /data/sillyGirl always exists before startup.
+# Everything lives under /app:
+#   /app/sillyGirl         — 可执行文件
+#   /app/plugins/          — 插件目录（可映射）
+#   /app/node_modules/     — 插件 node 依赖
+#   /app/.sillyplus/       — 数据目录（DB, 缓存等，可映射）
+#
+# 挂载 /app 即可持久化所有数据。
+# 如需精细控制，可分别映射子目录：
+#   -v /host/plugins:/app/plugins
+#   -v /host/data:/app/.sillyplus
 
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -31,20 +38,15 @@ LABEL org.opencontainers.image.architecture="${TARGETARCH}/${TARGETVARIANT}"
 RUN corepack enable \
     && corepack prepare yarn@1.22 --activate
 
-# Copy binary to /sillyGirl (outside volume mount point)
-COPY sillyGirl_linux_${TARGETARCH}${TARGETVARIANT} /sillyGirl
-RUN chmod +x /sillyGirl
+# Everything lives under /app — binary, plugins, data
+WORKDIR /app
 
-# Workdir is /data (persistent data volume), entrypoint restores binary
-WORKDIR /data
+COPY sillyGirl_linux_${TARGETARCH}${TARGETVARIANT} /app/sillyGirl
 
-# Entrypoint script: link /sillyGirl into /data so ExecPath works,
-# then exec the binary with all passed args.
-RUN printf '#!/bin/sh\nln -sf /sillyGirl /data/sillyGirl\nexec /sillyGirl "$@"\n' > /docker-entrypoint.sh && \
-    chmod +x /docker-entrypoint.sh
+RUN chmod +x /app/sillyGirl
 
 EXPOSE 8080
 
-VOLUME ["/data"]
+VOLUME ["/app"]
 
-ENTRYPOINT ["/docker-entrypoint.sh"]
+ENTRYPOINT ["/app/sillyGirl"]

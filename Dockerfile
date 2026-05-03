@@ -43,7 +43,7 @@ WORKDIR /data
 
 # Entrypoint: link binary into /data so ExecPath works,
 # set data dir to /data, then exec.
-RUN printf '#!/bin/sh\nln -sf /sillyGirl /data/sillyGirl\nexport SILLYGIRL_DATA_PATH=/data\nexec /sillyGirl "$@"\n' > /docker-entrypoint.sh && \
+RUN printf '#!/bin/sh\nln -sf /sillyGirl /data/sillyGirl\nexport SILLYGIRL_DATA_PATH=/data\nexec /data/sillyGirl "$@"\n' > /docker-entrypoint.sh && \
     chmod +x /docker-entrypoint.sh
 
 EXPOSE 8080

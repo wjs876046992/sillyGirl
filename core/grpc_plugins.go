@@ -491,24 +491,18 @@ func AddNodePlugin(path, name, class string) error {
 	for _, cb := range cbs {
 		cb()
 	}
-	if !f.Disable { //!f.OnStart &&
+	AddCommand([]*common.Function{f})
+
+	// Node 插件有 @http 路由时自动启动反向代理
+	if len(f.Https) > 0 && class == NODE {
 		if rf == nil {
-			// console.Log("已加载 %s%s", f.Title, f.Suffix)
-			// 首次加载：注册反向代理
-			if len(f.Https) > 0 && class == NODE {
-				StartNodeProxy(f)
-			}
+			// 首次加载：分配端口，注册路由
+			StartNodeProxy(f)
 		} else {
 			// 重载：只重启进程，保留端口和路由
 			RestartNodeProxy(uuid)
 			console.Log("已重载 %s%s", f.Title, f.Suffix)
 		}
-	}
-	AddCommand([]*common.Function{f})
-
-	// Node 插件有 @http 路由时自动启动反向代理（针对首次加载）
-	if rf == nil && len(f.Https) > 0 && class == NODE {
-		StartNodeProxy(f)
 	}
 
 	return nil

@@ -223,6 +223,9 @@ func initNodePlugins() {
 				}
 			case "WRITE": //, "CHMOD"
 				if plugin_index {
+					// 热加载：先清理已加载标记，再重新加载
+					uuid := nameUuid(plugin_name)
+					loadedPlugins.Delete(uuid)
 					AddNodePlugin(event.Name, plugin_name, class)
 					// fmt.Println("变更插件", event.Name, plugin_name)
 				}

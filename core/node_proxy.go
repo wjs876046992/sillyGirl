@@ -158,15 +158,41 @@ func StopNodeProxy(uuid string) {
 		entry.Cmd.Process.Kill()
 	}
 
-	// 释放端口
+	// 完全停止时释放端口和路由（关闭用StopAllNodeProxies）
 	usedPorts.Delete(entry.Port)
-
-	// 清理路由
-	// 注意：Gin 不支持运行时删除已注册路由，重载需要重启服务
-	// TODO: 后续可以考虑重启 8080 服务或使用路由分组 + 重建的方式
-
 	nodeProxies.Delete(uuid)
 	logs.Info("已停止插件 [%s] 反向代理 (端口 %d)", entry.UUID, entry.Port)
+}
+
+// RestartNodeProxy 重启 Node 插件反向代理（重载时调用，保留端口和路由）
+func RestartNodeProxy(uuid string) {
+	v, ok := nodeProxies.Load(uuid)
+	if !ok {
+		return
+	}
+	entry := v.(*nodeProxyEntry)
+
+	// 杀掉旧进程
+	if entry.Cmd != nil && entry.Cmd.Process != nil {
+		entry.Cmd.Process.Kill()
+	}
+
+	// 重置 stop 信号
+	entry.StopChan = make(chan struct{})
+
+	// 更新 Proxy 的目标（端口不变，但需要新连接）
+	targetURL := &url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("127.0.0.1:%d", entry.Port),
+	}
+	entry.Proxy = httputil.NewSingleHostReverseProxy(targetURL)
+
+	// 路由已经在第一次注册时存在，不需要重新注册
+	// Gin 不支持删除路由，但 recover 会跳过冲突
+	// 新进程启动后会监听同一端口，反向代理自动指向新进程
+
+	nodeProxies.Store(uuid, entry)
+	logs.Info("已重启插件 [%s] 反向代理 (端口 %d, 保留路由)", entry.UUID, entry.Port)
 }
 
 // StopAllNodeProxies 停止所有 Node 插件反向代理（傻妞关闭时调用）

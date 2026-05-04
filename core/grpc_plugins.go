@@ -245,14 +245,31 @@ func isNameUuid(uuid string) bool {
 	return strings.Contains(uuid, "_")
 }
 
+var loadingPlugins sync.Map // 记录正在加载中的插件 uuid，防止重复加载
+
 func AddNodePlugin(path, name, class string) error {
 
 	if name == "" {
 		return nil
 	}
 	uuid := nameUuid(name)
+
+	// 快速去重：如果已在加载中，跳过
+	if _, loaded := loadingPlugins.LoadOrStore(uuid, true); loaded {
+		return nil
+	}
+	defer loadingPlugins.Delete(uuid)
+
 	pluginLock.Lock()
 	defer pluginLock.Unlock()
+
+	// 如果插件已加载且正在运行，跳过重复加载
+	for i := range Functions {
+		if Functions[i].UUID == uuid && Functions[i].Running {
+			return nil
+		}
+	}
+
 	//移除
 	var rf *common.Function
 	for i := range Functions {

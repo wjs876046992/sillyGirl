@@ -8,12 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/cdle/sillyplus/core/common"
+	"github.com/cdle/sillyplus/core/logs"
 	"github.com/cdle/sillyplus/core/storage"
 	"github.com/cdle/sillyplus/utils"
 	"github.com/dop251/goja"
@@ -28,8 +30,74 @@ func init() {
 
 var processes sync.Map
 
+// killOrphanNodePlugins 在加载插件前，杀掉所有残留的 node 插件进程（PPID=1 的孤儿进程）
+func killOrphanNodePlugins() {
+	scanPid := func(bin string) {
+		// 通过 /proc 扫描同名子进程
+		dir, err := os.Open("/proc")
+		if err != nil {
+			return
+		}
+		defer dir.Close()
+
+		entries, _ := dir.Readdirnames(-1)
+		for _, entry := range entries {
+			pid, err := strconv.Atoi(entry)
+			if err != nil || pid == os.Getpid() {
+				continue
+			}
+
+			// 读取进程 cmdline
+			cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+			if err != nil {
+				continue
+			}
+			// cmdline 以 \x00 分隔
+			args := strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00")
+			if len(args) < 2 {
+				continue
+			}
+			// 匹配 node/py 脚本路径中含有 /plugins/ 的进程
+			if args[0] == bin && strings.Contains(args[len(args)-1], "/plugins/") {
+				// 只杀 PPID=1 的孤儿进程或不属于本进程的子进程
+				stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+				if err != nil {
+					continue
+				}
+				// stat 格式: pid (comm) state ppid ...
+				fields := strings.Fields(string(stat))
+				if len(fields) < 4 {
+					continue
+				}
+				ppid, _ := strconv.Atoi(fields[3])
+				if ppid == 1 || ppid != os.Getppid() {
+					proc, err := os.FindProcess(pid)
+					if err == nil && proc != nil {
+						proc.Signal(syscall.SIGTERM)
+						logs.Debug("已终止孤儿插件进程: %s (PID %d)", strings.Join(args, " "), pid)
+						// 3秒后强杀
+						go func(p int) {
+							time.Sleep(3 * time.Second)
+							if proc, err := os.FindProcess(p); err == nil && proc != nil {
+								proc.Kill()
+							}
+						}(pid)
+					}
+				}
+			}
+		}
+	}
+
+	scanPid("node")
+	scanPid("python3")
+}
+
 func initNodePlugins() {
 	initLanguage()
+
+	// 启动前先杀掉孤儿进程
+	killOrphanNodePlugins()
+
 	root := strings.ReplaceAll(utils.ExecPath+"/plugins", "\\", "/")
 	plugins := []string{root}
 	os.Mkdir(root, 0755)

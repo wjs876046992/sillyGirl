@@ -220,6 +220,13 @@ func registerProxyRoute(uuid string, route common.Http, proxy *httputil.ReverseP
 		proxy.ServeHTTP(c.Writer, c.Request)
 	}
 
+	// 避免重复注册导致 panic，用 recover 兜底
+	defer func() {
+		if r := recover(); r != nil {
+			logs.Warn("路由已存在，跳过注册: %s %s (冲突: %v)", method, path, r)
+		}
+	}()
+
 	var registered bool
 	switch method {
 	case "GET":

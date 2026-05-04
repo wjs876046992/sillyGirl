@@ -344,6 +344,13 @@ func AddNodePlugin(path, name, class string) error {
 	loadedPlugins.Store(uuid, true)
 	f.Reload = func() { //重载
 		loadedPlugins.Delete(uuid)
+		// 清理 Running 状态，触发重新加载
+		for i := range Functions {
+			if Functions[i].UUID == uuid {
+				Functions[i].Running = false
+				break
+			}
+		}
 		AddNodePlugin(path, name, class)
 	}
 

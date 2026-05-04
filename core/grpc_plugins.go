@@ -245,7 +245,7 @@ func isNameUuid(uuid string) bool {
 	return strings.Contains(uuid, "_")
 }
 
-var loadingPlugins sync.Map // 记录正在加载中的插件 uuid，防止重复加载
+var loadedPlugins sync.Map // 记录已加载完成的插件 uuid，防止重复加载
 
 func AddNodePlugin(path, name, class string) error {
 
@@ -254,11 +254,11 @@ func AddNodePlugin(path, name, class string) error {
 	}
 	uuid := nameUuid(name)
 
-	// 快速去重：如果已在加载中，跳过
-	if _, loaded := loadingPlugins.LoadOrStore(uuid, true); loaded {
+	// 如果插件已经加载过且正在运行，跳过重复加载
+	if _, loaded := loadedPlugins.Load(uuid); loaded {
+		logs.Debug("插件 [%s] 已加载，跳过重复加载", name)
 		return nil
 	}
-	defer loadingPlugins.Delete(uuid)
 
 	pluginLock.Lock()
 	defer pluginLock.Unlock()
@@ -338,7 +338,9 @@ func AddNodePlugin(path, name, class string) error {
 	// plugins_id.Store(uuid, path)
 	// fmt.Println("add,", uuid, name)
 	f, cbs := pluginParse(script, uuid)
+	loadedPlugins.Store(uuid, true)
 	f.Reload = func() { //重载
+		loadedPlugins.Delete(uuid)
 		AddNodePlugin(path, name, class)
 	}
 

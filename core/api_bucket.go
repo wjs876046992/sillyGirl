@@ -249,6 +249,25 @@ func init() {
 				}
 			}
 		}
+		// Node 外部插件：把新代码写回 main.js 文件并触发重载
+		for bk, v := range updates {
+			ar := strings.SplitN(bk, ".", 2)
+			if len(ar) == 2 && ar[0] == "plugins" && changes[bk] {
+				uuid := ar[1]
+				if content, ok := v.(string); ok && content != "" && content != "install" {
+					for _, f := range Functions {
+						if f.UUID == uuid && f.Suffix == ".js" && f.Path != "" {
+							if err := os.WriteFile(f.Path, []byte(content), 0644); err == nil {
+								if f.Reload != nil {
+									go f.Reload()
+								}
+							}
+							break
+						}
+					}
+				}
+			}
+		}
 		ctx.JSON(200, map[string]interface{}{
 			"success":  true,
 			"messages": messages,

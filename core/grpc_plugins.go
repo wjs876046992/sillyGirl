@@ -222,8 +222,8 @@ func initNodePlugins() {
 					AddNodePlugin(event.Name, plugin_name, class)
 				}
 			case "WRITE": //, "CHMOD"
-				// 热加载：main.js 变更或插件目录内任意文件变更都触发
-				if plugin_index || (len(files) >= 2 && plugin_name != "") {
+				if plugin_index {
+					// 热加载：先清理已加载标记，再重新加载
 					uuid := nameUuid(plugin_name)
 					loadedPlugins.Delete(uuid)
 					AddNodePlugin(event.Name, plugin_name, class)

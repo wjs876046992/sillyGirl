@@ -222,12 +222,11 @@ func initNodePlugins() {
 					AddNodePlugin(event.Name, plugin_name, class)
 				}
 			case "WRITE": //, "CHMOD"
-				if plugin_index {
-					// 热加载：先清理已加载标记，再重新加载
+				// 热加载：main.js 变更或插件目录内任意文件变更都触发
+				if plugin_index || (len(files) >= 2 && plugin_name != "") {
 					uuid := nameUuid(plugin_name)
 					loadedPlugins.Delete(uuid)
 					AddNodePlugin(event.Name, plugin_name, class)
-					// fmt.Println("变更插件", event.Name, plugin_name)
 				}
 			}
 		case err, ok := <-watcher.Errors:

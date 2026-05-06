@@ -617,6 +617,7 @@ func (f *Factory) Receive(props map[string]interface{}) *CustomSender {
 		switch strings.ToLower(i) {
 		case "content":
 			sender.details.Content = strings.TrimSpace(fmt.Sprint(props[i]))
+			logs.Debug("Receive 消息: platform=%s bot_id=%s user_id=%s content=%s", f.botplt, f.botid, sender.details.UserID, utils.TrimHiddenCharacter(utils.FormatLog(sender.details.Content)))
 			h = true
 		case "message_id", "messageId":
 			sender.details.MessageID = utils.Itoa(props[i])
@@ -774,6 +775,7 @@ func (sender *CustomSender) Reply(msgs ...interface{}) (string, error) {
 	content = regexp.MustCompile("[\n]{3,}").ReplaceAllString(content, "\n\n")
 	if content != "" {
 		user_id := sender.GetUserID()
+		logs.Debug("回复消息: platform=%s bot_id=%s user_id=%s content=%s", platform, bot_id, user_id, utils.TrimHiddenCharacter(utils.FormatLog(content)))
 		msg := map[string]interface{}{
 			"message_id": sender.GetMessageID(),
 			"content":    content,

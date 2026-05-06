@@ -638,8 +638,10 @@ func HandleMessage(sender common.Sender) {
 				if function.Admin && !a {
 					return
 				}
+				console.Debug("执行插件 [%s] UUID=%s type=%s", function.Title, function.UUID, function.Type)
 				rt := function.Handle(sender, nil)
 				if rt != nil {
+					console.Debug("插件 [%s] 返回结果: %v", function.Title, rt)
 					sender.Reply(rt)
 				}
 				if sender.IsContinue() {

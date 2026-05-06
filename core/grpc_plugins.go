@@ -366,6 +366,11 @@ func AddNodePlugin(path, name, class string) error {
 		console := &Console{UUID: uuid}
 		s.SetPluginID(uuid)
 		plt := s.GetImType()
+		// 有 @http 路由的 Node 插件由 StartNodeProxy 管理进程，Handle 不再启动
+		if len(f.Https) > 0 && class == NODE {
+			console.Debug("Node 插件 [%s] 由反向代理管理，跳过 Handle 启动", name)
+			return nil
+		}
 		bin := ""
 		var cmd *exec.Cmd
 		switch class {

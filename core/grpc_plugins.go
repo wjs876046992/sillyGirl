@@ -31,9 +31,11 @@ func init() {
 var processes sync.Map
 
 // killOrphanNodePlugins 在加载插件前，杀掉所有残留的 node 插件进程（PPID=1 的孤儿进程）
+// 匹配条件：可执行文件名为 bin（如 node/python3），且脚本路径以 ExecPath/plugins/ 开头（精确匹配当前实例）
 func killOrphanNodePlugins() {
+	pluginRoot := strings.ReplaceAll(utils.ExecPath+"/plugins/", "\\", "/")
+
 	scanPid := func(bin string) {
-		// 通过 /proc 扫描同名子进程
 		dir, err := os.Open("/proc")
 		if err != nil {
 			return
@@ -47,7 +49,6 @@ func killOrphanNodePlugins() {
 				continue
 			}
 
-			// 读取进程 cmdline
 			cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 			if err != nil {
 				continue
@@ -57,32 +58,38 @@ func killOrphanNodePlugins() {
 			if len(args) < 2 {
 				continue
 			}
-			// 匹配 node/py 脚本路径中含有 /plugins/ 的进程
-			if args[0] == bin && strings.Contains(args[len(args)-1], "/plugins/") {
-				// 只杀 PPID=1 的孤儿进程或不属于本进程的子进程
-				stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-				if err != nil {
-					continue
-				}
-				// stat 格式: pid (comm) state ppid ...
-				fields := strings.Fields(string(stat))
-				if len(fields) < 4 {
-					continue
-				}
-				ppid, _ := strconv.Atoi(fields[3])
-				if ppid == 1 || ppid != os.Getppid() {
-					proc, err := os.FindProcess(pid)
-					if err == nil && proc != nil {
-						proc.Signal(syscall.SIGTERM)
-						logs.Debug("已终止孤儿插件进程: %s (PID %d)", strings.Join(args, " "), pid)
-						// 3秒后强杀
-						go func(p int) {
-							time.Sleep(3 * time.Second)
-							if proc, err := os.FindProcess(p); err == nil && proc != nil {
-								proc.Kill()
-							}
-						}(pid)
-					}
+			// 匹配：可执行文件为 bin 且脚本路径以当前插件根目录开头
+			if args[0] != bin {
+				continue
+			}
+			scriptPath := args[len(args)-1]
+			if !strings.HasPrefix(scriptPath, pluginRoot) {
+				continue
+			}
+
+			// 只杀 PPID=1 的孤儿进程或不属于本进程的子进程
+			stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+			if err != nil {
+				continue
+			}
+			// stat 格式: pid (comm) state ppid ...
+			fields := strings.Fields(string(stat))
+			if len(fields) < 4 {
+				continue
+			}
+			ppid, _ := strconv.Atoi(fields[3])
+			if ppid == 1 || ppid != os.Getppid() {
+				proc, err := os.FindProcess(pid)
+				if err == nil && proc != nil {
+					proc.Signal(syscall.SIGTERM)
+					logs.Debug("已终止孤儿插件进程: %s (PID %d)", strings.Join(args, " "), pid)
+					// 3秒后强杀
+					go func(p int) {
+						time.Sleep(3 * time.Second)
+						if proc, err := os.FindProcess(p); err == nil && proc != nil {
+							proc.Kill()
+						}
+					}(pid)
 				}
 			}
 		}

@@ -30,6 +30,9 @@ func init() {
 
 var processes sync.Map
 
+// pluginRestartCount 跟踪插件重启次数，用于退避
+var pluginRestartCount sync.Map
+
 // killOrphanNodePlugins 在加载插件前，杀掉所有残留的插件进程（孤儿进程 PPID=1）
 // 匹配条件：进程命令行最后一个参数（脚本路径）以 ExecPath/plugins/ 开头
 // 不限制可执行文件（node/python3）名称，因为孤儿进程可能继承自不同的 node 环境
@@ -388,6 +391,8 @@ func AddNodePlugin(path, name, class string) error {
 		if len(cmd.Env) == 0 {
 			cmd.Env = os.Environ()
 		}
+		// 设置 NODE_PATH 确保插件能找到 sillygirl 模块（ExecPath/node_modules/ 可能不在向上搜索路径上）
+		cmd.Env = append(cmd.Env, "NODE_PATH="+utils.ExecPath+"/node_modules")
 		cmd.Env = append(cmd.Env, "RUNTIME_ID="+RUNTIME_ID)
 		cmd.Env = append(cmd.Env, "PLUGIN_ID="+uuid)
 		// 获取标准输出和标准错误输出的管道
@@ -492,6 +497,34 @@ func AddNodePlugin(path, name, class string) error {
 				defer deleteSenderRegister(RUNTIME_ID)
 				defer processes.Delete(cmd)
 				err = cmd.Wait()
+				if err != nil {
+					// 退避计算：连续重启次数越多，间隔越长
+					countRaw, _ := pluginRestartCount.LoadOrStore(uuid, 0)
+					count := countRaw.(int) + 1
+					pluginRestartCount.Store(uuid, count)
+					backoff := time.Duration(count) * 5 * time.Second
+					if backoff > 60*time.Second {
+						backoff = 60 * time.Second
+					}
+					console.Error("插件 [%s] 进程异常退出: %v (%d次), %v后自动重启", name, err, count, backoff)
+
+					// 清理已加载标记，允许重新加载
+					loadedPlugins.Delete(uuid)
+					time.Sleep(backoff)
+
+					// 重新启动插件
+					index, reloadClass := FindMainIndex(filepath.Dir(path))
+					if reloadClass == NODE || reloadClass == class {
+						AddNodePlugin(path, name, class)
+						// 重启成功则清零计数
+						pluginRestartCount.Delete(uuid)
+					} else {
+						console.Error("插件 [%s] 重启失败: 找不到 main.js", name)
+					}
+				} else {
+					// 正常退出，清零重启计数
+					pluginRestartCount.Delete(uuid)
+				}
 			}()
 		}
 		return nil

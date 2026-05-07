@@ -513,7 +513,7 @@ func AddNodePlugin(path, name, class string) error {
 					time.Sleep(backoff)
 
 					// 重新启动插件
-					index, reloadClass := FindMainIndex(filepath.Dir(path))
+					_, reloadClass := FindMainIndex(filepath.Dir(path))
 					if reloadClass == NODE || reloadClass == class {
 						AddNodePlugin(path, name, class)
 						// 重启成功则清零计数

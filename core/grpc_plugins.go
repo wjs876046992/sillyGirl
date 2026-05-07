@@ -79,7 +79,7 @@ func killOrphanNodePlugins() {
 			proc, err := os.FindProcess(pid)
 			if err == nil && proc != nil {
 				proc.Signal(syscall.SIGTERM)
-				logs.Debug("已终止孤儿插件进程: %s (PID %d)", strings.Join(args, " "), pid)
+				fmt.Println("已终止孤儿插件进程:", strings.Join(args, " "), "PID", pid)
 				// 3秒后强杀
 				go func(p int) {
 					time.Sleep(3 * time.Second)

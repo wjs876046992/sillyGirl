@@ -71,11 +71,7 @@ func Init() {
 			defer func() {
 				updates--
 			}()
-			var body io.Reader
 			var latest_version = ""
-			var resp *http.Response
-
-			proxy := false
 
 			// 从 GitHub API 获取最新 release tag
 			console.Debug("正在从 GitHub API 获取最新 release 版本号...")
@@ -103,43 +99,20 @@ func Init() {
 			client := &http.Client{
 				Timeout: 60 * time.Second,
 			}
-			resp, err = client.Get(qurl)
+			resp, err := client.Get(qurl)
 			if err != nil || resp.StatusCode != 200 {
-				console.Error("获取最新编译文件错误：%v", err)
-				if resp != nil {
-					resp.Body.Close()
-				}
-				goto PROXY
-			}
-			defer resp.Body.Close()
-			body = resp.Body
-			goto CREATE
-		PROXY:
-			// 备用：通过 172.96.255.172 代理下载
-			proxy = true
-			console.Info("正在通过代理重新尝试下载...")
-			qurl = "http://172.96.255.172:8765/api/download?version=" + compiled_at + "&goos=" + runtime.GOOS + "&goarch=" + runtime.GOARCH
-			resp, err = http.Get(qurl)
-			if err != nil {
+				console.Error("获取最新编译文件错误：%v (status: %d)", err, func() int {
+					if resp != nil {
+						return resp.StatusCode
+					}
+					return 0
+				}())
 				return &storage.Final{
 					Error: fmt.Errorf("升级时貌似网络不太行啊"),
 				}
 			}
 			defer resp.Body.Close()
-			body = resp.Body
-			switch resp.Header.Get("Result") {
-			case "newest":
-				return &storage.Final{
-					Message: fmt.Sprintf("当前版本 %s 已是最新，无需升级", compiled_at),
-				}
-			case "fail":
-				return &storage.Final{
-					Error: fmt.Errorf("升级失败"),
-				}
-			case "ok":
-			}
 
-		CREATE:
 			console.Debug("正在创建编译文件...")
 			filename := utils.ExecPath + "/" + utils.ProcessName
 			ready := ""
@@ -156,11 +129,8 @@ func Init() {
 				}
 			}
 			defer f.Close()
-			i, err := io.Copy(f, body)
+			i, err := io.Copy(f, resp.Body)
 			if i < 2646140 || err != nil {
-				if !proxy {
-					goto PROXY
-				}
 				console.Error("创建编译文件错误：%v %v", i, err)
 				return &storage.Final{
 					Error: fmt.Errorf("创建编译文件错误：%v %v", i, err),

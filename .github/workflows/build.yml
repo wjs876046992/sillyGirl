@@ -244,26 +244,29 @@ jobs:
         if: steps.release.outputs.mode == 'create'
         shell: bash
         run: |
-          cat > /tmp/release_body.md << EOF
-## 🎉 自动构建
+          cat > /tmp/release_body.md <<- 'HEREDOC'
+          ## 🎉 自动构建
 
-此版本由 CI 自动构建，基于分支 \`${{ github.ref_name }}\`。
+          此版本由 CI 自动构建。
 
-### 构建信息
+          ### 构建信息
 
-| 项目 | 值 |
-|------|----|
-| 分支 | \`${{ github.ref_name }}\` |
-| 提交 | \`${{ github.sha }}\` |
-| 触发事件 | ${{ github.event_name }} |
+          | 项目 | 值 |
+          |------|----|
+          | 分支 | BRANCH_PLACEHOLDER |
+          | 提交 | SHA_PLACEHOLDER |
+          | 触发事件 | EVENT_PLACEHOLDER |
 
-### 支持平台
+          ### 支持平台
 
-- **Linux**: amd64 / arm64
-- **macOS**: amd64 / arm64 (Intel + Apple Silicon)
-- **Windows**: amd64
-EOF
-          echo "bodyfile=/tmp/release_body.md" >> \$GITHUB_OUTPUT
+          - **Linux**: amd64 / arm64
+          - **macOS**: amd64 / arm64 (Intel + Apple Silicon)
+          - **Windows**: amd64
+          HEREDOC
+          sed -i "s|BRANCH_PLACEHOLDER|${{ github.ref_name }}|g" /tmp/release_body.md
+          sed -i "s|SHA_PLACEHOLDER|${{ github.sha }}|g" /tmp/release_body.md
+          sed -i "s|EVENT_PLACEHOLDER|${{ github.event_name }}|g" /tmp/release_body.md
+          echo "bodyfile=/tmp/release_body.md" >> $GITHUB_OUTPUT
         id: bodygen
 
       - name: Create or Update Release
@@ -271,7 +274,7 @@ EOF
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: ${{ steps.release.outputs.tag }}
-          body_path: ${{ steps.release.outputs.mode == 'create' && steps.bodygen.outputs.bodyfile || '' }}
+          body_path: ${{ steps.bodygen.outputs.bodyfile }}
           prerelease: ${{ steps.release.outputs.mode == 'create' && 'true' || 'false' }}
           fail_on_unmatched_files: false
           files: |

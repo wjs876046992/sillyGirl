@@ -240,13 +240,38 @@ jobs:
             echo "mode=create" >> $GITHUB_OUTPUT
           fi
 
+      - name: Generate Release Body
+        if: steps.release.outputs.mode == 'create'
+        shell: bash
+        run: |
+          cat > /tmp/release_body.md << EOF
+## 🎉 自动构建
+
+此版本由 CI 自动构建，基于分支 \`${{ github.ref_name }}\`。
+
+### 构建信息
+
+| 项目 | 值 |
+|------|----|
+| 分支 | \`${{ github.ref_name }}\` |
+| 提交 | \`${{ github.sha }}\` |
+| 触发事件 | ${{ github.event_name }} |
+
+### 支持平台
+
+- **Linux**: amd64 / arm64
+- **macOS**: amd64 / arm64 (Intel + Apple Silicon)
+- **Windows**: amd64
+EOF
+          echo "bodyfile=/tmp/release_body.md" >> \$GITHUB_OUTPUT
+        id: bodygen
+
       - name: Create or Update Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: ${{ steps.release.outputs.tag }}
-          # 仅在创建新 release 时设置 body，更新已有 release 时不覆盖已有说明
-          body: ${{ steps.release.outputs.mode == 'create' && '由 CI 自动构建的傻妞二进制版本。' || '' }}
+          body_path: ${{ steps.release.outputs.mode == 'create' && steps.bodygen.outputs.bodyfile || '' }}
           prerelease: ${{ steps.release.outputs.mode == 'create' && 'true' || 'false' }}
           fail_on_unmatched_files: false
           files: |

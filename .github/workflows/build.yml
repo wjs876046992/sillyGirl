@@ -35,7 +35,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag（留空则自动生成 v2.1.0-时间戳）'
+        description: 'Release tag（留空则自动生成 分支名-时间戳）'
         required: false
         type: string
 
@@ -97,12 +97,21 @@ jobs:
           mkdir -p ../core/proto3/dist
           cp dist/sillygirl.js ../core/proto3/dist/sillygirl.js
 
-      - name: Inject build time
+      - name: Inject compile time version
         shell: bash
         run: |
-          n=$(date +%s%3N)
-          echo "package core" > core/compile_time.go
-          echo "var compiled_at = \"$n\"" >> core/compile_time.go
+          MANUAL_TAG="${{ inputs.release_tag }}"
+          if [ -n "$MANUAL_TAG" ]; then
+            # 手动发布：使用 release tag 作为版本号
+            echo "package core" > core/compile_time.go
+            echo "var compiled_at = \"$MANUAL_TAG\"" >> core/compile_time.go
+          else
+            # 自动构建：使用分支名+时间戳
+            n=$(date +%s%3N)
+            echo "package core" > core/compile_time.go
+            echo "var compiled_at = \"${{ github.ref_name }}-$n\"" >> core/compile_time.go
+          fi
+          echo "编译版本: $(cat core/compile_time.go)"
 
       - name: Build
         if: github.event_name != 'pull_request' || (matrix.goos == 'linux' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64'))
@@ -225,8 +234,9 @@ jobs:
             if [ -z "$COMPILE_TS" ]; then
               COMPILE_TS=$(date +%s%3N)
             fi
-            TAG="v2.1.0-$COMPILE_TS"
-            echo "tag=$TAG" >> $GITHUB_OUTPUT
+            # 从分支名提取版本号，如 v2.1 → v2.1-时间戳
+            BRANCH="${GITHUB_REF_NAME}"
+            echo "tag=${BRANCH}-${COMPILE_TS}" >> $GITHUB_OUTPUT
             echo "mode=create" >> $GITHUB_OUTPUT
           fi
 

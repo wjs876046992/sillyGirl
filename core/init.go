@@ -1,48 +1,55 @@
 package core
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"net"
 	"net/http"
 	"os"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
 
-	"github.com/beego/beego/v2/adapter/httplib"
 	"github.com/cdle/sillyplus/core/storage"
 	"github.com/cdle/sillyplus/utils"
 )
 
 var version = compiled_at
 
-func GetVersion() (string, error) {
-	v, e := httplib.Get("http://172.96.255.172:8765/api/version").String()
-	if len(v) == 13 {
-		if version != v && v != compiled_at {
-			sillyGirl.Set("version", v)
-			console.Log("发现更新，版本号", v)
-			version = v
-		}
-		return v, e
+// getLatestReleaseTag 从 GitHub API 获取最新 release tag
+func getLatestReleaseTag() (string, error) {
+	client := &http.Client{
+		Timeout: 15 * time.Second,
 	}
-	return v, errors.New("版本获取失败")
+	resp, err := client.Get("https://api.github.com/repos/wjs876046992/sillyGirl/releases/latest")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if result.TagName == "" {
+		return "", errors.New("无法获取最新 release tag")
+	}
+	return result.TagName, nil
+}
+
+// getLatestReleaseAssetURL 构造 release asset 下载地址
+func getLatestReleaseAssetURL(tag string) string {
+	assetName := fmt.Sprintf("sillyGirl_%s_%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		assetName += ".exe"
+	}
+	return fmt.Sprintf("https://github.com/wjs876046992/sillyGirl/releases/download/%s/%s", tag, assetName)
 }
 
 func Init() {
-	go func() {
-		for {
-			GetVersion()
-			if version != compiled_at {
-				break
-			}
-			time.Sleep(time.Minute * 5)
-		}
-	}()
 	initLoc()
 	sillyGirl = MakeBucket("sillyGirl")
 	// utils.ReadYaml(utils.ExecPath+"/conf/", &Config, "https://raw.githubusercontent.com/cdle/sillyplus/main/conf/demo_config.yaml")
@@ -64,94 +71,53 @@ func Init() {
 			defer func() {
 				updates--
 			}()
-			var transport *http.Transport
-			instance, err := GetProxyTransport("https://raw.githubusercontent.com", "", nil)
-			if err != nil {
-				console.Error("升级代理错误：%s", err)
-				return &storage.Final{
-					Error: fmt.Errorf("升级代理错误：：%s", err),
-				}
-			}
-			if instance != nil {
-				defer instance.Close()
-			}
-			if instance != nil {
-				transport = &http.Transport{
-					Dial: func(string, string) (net.Conn, error) {
-						return instance, nil
-					},
-					MaxIdleConns:          100,
-					IdleConnTimeout:       90 * time.Second,
-					TLSHandshakeTimeout:   10 * time.Second,
-					ExpectContinueTimeout: 1 * time.Second,
-				}
-			}
-			var client = &http.Client{}
-			if transport != nil {
-				client.Transport = transport
-			}
 			var body io.Reader
-			var data []byte
 			var latest_version = ""
 			var resp *http.Response
-			var req *http.Request
 
 			proxy := false
-			qurl := "https://raw.githubusercontent.com/cdle/binary/main/compile_time.go"
 
-			version, _ := GetVersion()
-			if version != "" {
-				console.Debug("正在从 github 获取版本号...")
-				latest_version = version
-			} else {
-				console.Debug("正在从 cdle/binary 获取版本号...")
-				req, _ = http.NewRequest("GET", qurl, strings.NewReader(""))
-				resp, err = client.Do(req)
-				if err != nil {
-					console.Error("获取版本号错误：%s", err)
-					// return &storage.Final{
-					// 	Error: fmt.Errorf("貌似网络不太行啊：%s", err),
-					// }
-					goto PROXY
+			// 从 GitHub API 获取最新 release tag
+			console.Debug("正在从 GitHub API 获取最新 release 版本号...")
+			latest_version, err := getLatestReleaseTag()
+			if err != nil {
+				console.Error("获取最新 release tag 错误：%s", err)
+				return &storage.Final{
+					Error: fmt.Errorf("获取最新版本失败：%s", err),
 				}
-				defer resp.Body.Close()
-				data, _ = ioutil.ReadAll(resp.Body)
-				latest_version = regexp.MustCompile(`\d{13}`).FindString(string(data))
 			}
+			console.Debug("最新 release 版本: %s, 当前版本: %s", latest_version, compiled_at)
 
+			// 版本比较：latest_version > compiled_at
 			if latest_version <= compiled_at {
 				console.Debug("当前版本 %s 已是最新，无需升级", compiled_at)
 				return &storage.Final{
 					Message: fmt.Sprintf("当前版本 %s 已是最新，无需升级", compiled_at),
 				}
 			}
-			client = &http.Client{
-				Timeout: 30 * time.Second,
+
+			// 从 GitHub release 下载对应平台的二进制
+			qurl := getLatestReleaseAssetURL(latest_version)
+			console.Debug("正在从 release 获取最新版本 %s 编译文件: %s", latest_version, qurl)
+
+			client := &http.Client{
+				Timeout: 60 * time.Second,
 			}
-			if transport != nil {
-				client.Transport = transport
-			}
-			console.Debug("正在从 cdle/binary 获取最新版本 %s 编译文件...", latest_version)
-			qurl = "https://raw.githubusercontent.com/cdle/binary/master/sillyGirl_" + runtime.GOOS + "_" + runtime.GOARCH + "_" + latest_version
-			if runtime.GOOS == "windows" {
-				qurl += ".exe"
-			}
-			req, _ = http.NewRequest("GET", qurl, strings.NewReader(""))
-			resp, err = client.Do(req)
-			if err != nil {
-				console.Error("获取最新编译文件错误：%s", err)
-				// return &storage.Final{
-				// 	Error: fmt.Errorf("升级时貌似网络不太行啊：%v", err),
-				// }
+			resp, err = client.Get(qurl)
+			if err != nil || resp.StatusCode != 200 {
+				console.Error("获取最新编译文件错误：%v", err)
+				if resp != nil {
+					resp.Body.Close()
+				}
 				goto PROXY
 			}
 			defer resp.Body.Close()
 			body = resp.Body
 			goto CREATE
 		PROXY:
-			//使用免费代理下载
+			// 备用：通过 172.96.255.172 代理下载
 			proxy = true
-			console.Info("正在重新尝试下载...")
+			console.Info("正在通过代理重新尝试下载...")
 			qurl = "http://172.96.255.172:8765/api/download?version=" + compiled_at + "&goos=" + runtime.GOOS + "&goarch=" + runtime.GOARCH
 			resp, err = http.Get(qurl)
 			if err != nil {
@@ -258,11 +224,6 @@ func Init() {
 	// if sillyplus.GetString("uuid") == "" {
 	sillyGirl.Set("uuid", utils.GenUUID())
 	// }
-	httplib.SetDefaultSetting(httplib.BeegoHTTPSettings{
-		ConnectTimeout:   time.Second * 10,
-		ReadWriteTimeout: time.Second * 10,
-		UserAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 Safari/537.36",
-	})
 	initPlugins()
 	initReboot()
 	initListenReply()

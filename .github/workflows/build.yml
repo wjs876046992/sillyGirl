@@ -106,10 +106,10 @@ jobs:
             echo "package core" > core/compile_time.go
             echo "var compiled_at = \"$MANUAL_TAG\"" >> core/compile_time.go
           else
-            # 自动构建：使用分支名+时间戳
+            # 自动构建：使用分支名+dev.时间戳
             n=$(date +%s%3N)
             echo "package core" > core/compile_time.go
-            echo "var compiled_at = \"${{ github.ref_name }}-$n\"" >> core/compile_time.go
+            echo "var compiled_at = \"${{ github.ref_name }}-dev.$n\"" >> core/compile_time.go
           fi
           echo "编译版本: $(cat core/compile_time.go)"
 
@@ -247,12 +247,8 @@ jobs:
             echo "mode=update" >> $GITHUB_OUTPUT
           else
             COMPILE_TS=$(grep compiled_at core/compile_time.go 2>/dev/null | grep -o '"[^"]*"' | tr -d '"')
-            if [ -z "$COMPILE_TS" ]; then
-              COMPILE_TS=$(date +%s%3N)
-            fi
-            # 从分支名提取版本号，如 v2.1 → v2.1-时间戳
-            BRANCH="${GITHUB_REF_NAME}"
-            echo "tag=${BRANCH}-${COMPILE_TS}" >> $GITHUB_OUTPUT
+            # release tag 直接用 compile_time.go 里写入的版本号
+            echo "tag=${COMPILE_TS}" >> $GITHUB_OUTPUT
             echo "mode=create" >> $GITHUB_OUTPUT
           fi
 

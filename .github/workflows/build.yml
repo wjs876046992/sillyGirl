@@ -316,3 +316,16 @@ jobs:
             artifacts/sillyGirl_darwin_amd64
             artifacts/sillyGirl_darwin_arm64
             artifacts/sillyGirl_windows_amd64.exe
+
+      - name: Clean up pre-release tags（正式版发布后清理 dev 构建）
+        if: steps.release.outputs.mode == 'update' && github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          echo "清理 pre-release release..."
+          gh api "/repos/${{ github.repository }}/releases" --paginate --jq '.[] | select(.prerelease) | .tag_name' 2>/dev/null | while read tag; do
+            if [ -n "$tag" ]; then
+              echo "删除: $tag"
+              gh release delete "$tag" -y 2>/dev/null || true
+            fi
+          done
+          echo "清理完成"

@@ -156,7 +156,7 @@ var getProcessName = func() string {
 }
 
 var GetPidFile = func() string {
-	return filepath.Join(GetDataHome(), "sillyGirl.pid")
+	return filepath.Join(os.TempDir(), "sillyGirl.pid")
 }
 
 func GetPidFromFile(pidFile string) (int, error) {

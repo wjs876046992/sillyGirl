@@ -139,6 +139,10 @@ func KillPeer() error {
 		return err
 	}
 	if id != 0 {
+		// 如果旧 pid 等于当前进程，说明是容器重启或相同进程重启，不杀自己
+		if id == os.Getpid() {
+			return nil
+		}
 		return KillProcess(id)
 	}
 	return nil

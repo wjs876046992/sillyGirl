@@ -43,7 +43,33 @@ env:
   IMAGE_NAME: ntwck/sillygirl
 
 jobs:
+  timestamp:
+    runs-on: ubuntu-latest
+    outputs:
+      now: ${{ steps.gen.outputs.now }}
+      dev_base: ${{ steps.gen.outputs.dev_base }}
+    steps:
+      - name: Generate timestamp
+        id: gen
+        shell: bash
+        run: |
+          n=$(date +%s%3N)
+          echo "now=$n" >> $GITHUB_OUTPUT
+          MANUAL_TAG="${{ inputs.release_tag }}"
+          if [ -n "$MANUAL_TAG" ]; then
+            echo "dev_base=$MANUAL_TAG" >> $GITHUB_OUTPUT
+          else
+            LATEST_RELEASE=$(curl -sL https://api.github.com/repos/${{ github.repository }}/releases/latest 2>/dev/null | grep '"tag_name"' | grep -o 'v[^"]*' || echo "")
+            if [ -n "$LATEST_RELEASE" ]; then
+              echo "dev_base=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+            else
+              echo "dev_base=${{ github.ref_name }}.0" >> $GITHUB_OUTPUT
+            fi
+          fi
+          echo "时间戳: $n"
+
   build:
+    needs: timestamp
     strategy:
       matrix:
         include:
@@ -102,22 +128,11 @@ jobs:
         run: |
           MANUAL_TAG="${{ inputs.release_tag }}"
           if [ -n "$MANUAL_TAG" ]; then
-            # 手动发布：使用 release tag 作为版本号
             echo "package core" > core/compile_time.go
             echo "var compiled_at = \"$MANUAL_TAG\"" >> core/compile_time.go
           else
-            # 自动构建：获取最新 release 版本号，递进补丁号作为 dev 基准
-            LATEST_RELEASE=$(curl -sL https://api.github.com/repos/${{ github.repository }}/releases/latest 2>/dev/null | grep '"tag_name"' | grep -o 'v[^"]*' || echo "")
-            if [ -n "$LATEST_RELEASE" ]; then
-              # v2.1.3 → v2.1.3 直接作为 dev 前缀
-              DEV_BASE="$LATEST_RELEASE"
-            else
-              # 没有 release 过，从分支名生成基础版本
-              DEV_BASE="${{ github.ref_name }}.0"
-            fi
-            n=$(date +%s%3N)
             echo "package core" > core/compile_time.go
-            echo "var compiled_at = \"${DEV_BASE}-dev.$n\"" >> core/compile_time.go
+            echo "var compiled_at = \"${{ needs.timestamp.outputs.dev_base }}-dev.${{ needs.timestamp.outputs.now }}\"" >> core/compile_time.go
           fi
           echo "编译版本: $(cat core/compile_time.go)"
 
@@ -204,7 +219,7 @@ jobs:
           tags: ${{ steps.dockertags.outputs.tags }}
 
   release:
-    needs: [build]
+    needs: [timestamp, build]
     runs-on: ubuntu-latest
     # 仅在合并后运行，PR / workflow_dispatch 不做 release
     if: github.event_name != 'pull_request'
@@ -245,20 +260,6 @@ jobs:
       - name: List artifacts
         run: find artifacts/ -type f -ls
 
-      - name: Inject compile time version
-        shell: bash
-        run: |
-          LATEST_RELEASE=$(curl -sL https://api.github.com/repos/${{ github.repository }}/releases/latest 2>/dev/null | grep '"tag_name"' | grep -o 'v[^"]*' || echo "")
-          if [ -n "$LATEST_RELEASE" ]; then
-            DEV_BASE="$LATEST_RELEASE"
-          else
-            DEV_BASE="${{ github.ref_name }}.0"
-          fi
-          n=$(date +%s%3N)
-          echo "package core" > core/compile_time.go
-          echo "var compiled_at = \"${DEV_BASE}-dev.$n\"" >> core/compile_time.go
-          echo "编译版本: $(cat core/compile_time.go)"
-
       - name: Determine tag name
         id: release
         shell: bash
@@ -268,8 +269,7 @@ jobs:
             echo "tag=$MANUAL_TAG" >> $GITHUB_OUTPUT
             echo "mode=update" >> $GITHUB_OUTPUT
           else
-            COMPILE_TS=$(grep compiled_at core/compile_time.go 2>/dev/null | grep -o '"[^"]*"' | tr -d '"')
-            echo "tag=${COMPILE_TS}" >> $GITHUB_OUTPUT
+            echo "tag=${{ needs.timestamp.outputs.dev_base }}-dev.${{ needs.timestamp.outputs.now }}" >> $GITHUB_OUTPUT
             echo "mode=create" >> $GITHUB_OUTPUT
           fi
 

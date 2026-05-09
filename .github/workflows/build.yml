@@ -244,7 +244,7 @@ jobs:
         if: steps.release.outputs.mode == 'create'
         shell: bash
         run: |
-          cat > /tmp/release_body.md <<- 'HEREDOC'
+          cat > /tmp/release_body.md << "HEREDOC"
           ## 🎉 自动构建
 
           此版本由 CI 自动构建。

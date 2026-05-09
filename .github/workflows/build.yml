@@ -237,6 +237,14 @@ jobs:
       - name: List artifacts
         run: find artifacts/ -type f -ls
 
+      - name: Inject compile time version
+        shell: bash
+        run: |
+          n=$(date +%s%3N)
+          echo "package core" > core/compile_time.go
+          echo "var compiled_at = \"${{ github.ref_name }}-dev.$n\"" >> core/compile_time.go
+          echo "编译版本: $(cat core/compile_time.go)"
+
       - name: Determine tag name
         id: release
         shell: bash
@@ -247,7 +255,6 @@ jobs:
             echo "mode=update" >> $GITHUB_OUTPUT
           else
             COMPILE_TS=$(grep compiled_at core/compile_time.go 2>/dev/null | grep -o '"[^"]*"' | tr -d '"')
-            # release tag 直接用 compile_time.go 里写入的版本号
             echo "tag=${COMPILE_TS}" >> $GITHUB_OUTPUT
             echo "mode=create" >> $GITHUB_OUTPUT
           fi

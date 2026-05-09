@@ -107,8 +107,9 @@ func Init() {
 			if !versionGreater(latest_version, compiled_at) {
 				console.Debug("当前版本 %s 已是最新，无需升级", compiled_at)
 				// 恢复编译版本（用户可能通过面板写入随机字符串触发升级）
-				sillyGirl.Set("compiled_at", compiled_at)
+				// 用 Now 字段返回正确值，存储层会用这个值覆盖数据库
 				return &storage.Final{
+					Now:     compiled_at,
 					Message: fmt.Sprintf("当前版本 %s 已是最新，无需升级", compiled_at),
 				}
 			}

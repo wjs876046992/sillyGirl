@@ -103,9 +103,11 @@ func Init() {
 			console.Debug("最新 release 版本: %s, 当前版本: %s", latest_version, compiled_at)
 
 			// 版本比较：latest_version > compiled_at
-			// 支持 dev 版本（v2.1-dev.时间戳）正确比较，不会降级到旧 release
+			// 支持 dev 版本正确比较，不会降级到旧 release
 			if !versionGreater(latest_version, compiled_at) {
 				console.Debug("当前版本 %s 已是最新，无需升级", compiled_at)
+				// 恢复编译版本（用户可能通过面板写入随机字符串触发升级）
+				sillyGirl.Set("compiled_at", compiled_at)
 				return &storage.Final{
 					Message: fmt.Sprintf("当前版本 %s 已是最新，无需升级", compiled_at),
 				}

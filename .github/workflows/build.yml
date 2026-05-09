@@ -77,7 +77,7 @@ jobs:
             goos: linux
             goarch: amd64
             ext: ""
-            upx: true
+            upx: false
           - os: ubuntu-latest
             goos: linux
             goarch: arm64

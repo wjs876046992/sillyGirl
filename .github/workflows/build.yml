@@ -320,6 +320,8 @@ jobs:
       - name: Clean up pre-release tags（正式版发布后清理 dev 构建）
         if: steps.release.outputs.mode == 'update' && github.event_name == 'workflow_dispatch'
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "清理 pre-release release..."
           gh release list --repo ${{ github.repository }} --limit 100 --json isPrerelease,tagName --jq '.[] | select(.isPrerelease) | .tagName' 2>/dev/null | while read tag; do

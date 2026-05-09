@@ -106,10 +106,18 @@ jobs:
             echo "package core" > core/compile_time.go
             echo "var compiled_at = \"$MANUAL_TAG\"" >> core/compile_time.go
           else
-            # 自动构建：使用分支名+dev.时间戳
+            # 自动构建：获取最新 release 版本号，递进补丁号作为 dev 基准
+            LATEST_RELEASE=$(curl -sL https://api.github.com/repos/${{ github.repository }}/releases/latest 2>/dev/null | grep '"tag_name"' | grep -o 'v[^"]*' || echo "")
+            if [ -n "$LATEST_RELEASE" ]; then
+              # v2.1.3 → v2.1.3 直接作为 dev 前缀
+              DEV_BASE="$LATEST_RELEASE"
+            else
+              # 没有 release 过，从分支名生成基础版本
+              DEV_BASE="${{ github.ref_name }}.0"
+            fi
             n=$(date +%s%3N)
             echo "package core" > core/compile_time.go
-            echo "var compiled_at = \"${{ github.ref_name }}-dev.$n\"" >> core/compile_time.go
+            echo "var compiled_at = \"${DEV_BASE}-dev.$n\"" >> core/compile_time.go
           fi
           echo "编译版本: $(cat core/compile_time.go)"
 
@@ -240,9 +248,15 @@ jobs:
       - name: Inject compile time version
         shell: bash
         run: |
+          LATEST_RELEASE=$(curl -sL https://api.github.com/repos/${{ github.repository }}/releases/latest 2>/dev/null | grep '"tag_name"' | grep -o 'v[^"]*' || echo "")
+          if [ -n "$LATEST_RELEASE" ]; then
+            DEV_BASE="$LATEST_RELEASE"
+          else
+            DEV_BASE="${{ github.ref_name }}.0"
+          fi
           n=$(date +%s%3N)
           echo "package core" > core/compile_time.go
-          echo "var compiled_at = \"${{ github.ref_name }}-dev.$n\"" >> core/compile_time.go
+          echo "var compiled_at = \"${DEV_BASE}-dev.$n\"" >> core/compile_time.go
           echo "编译版本: $(cat core/compile_time.go)"
 
       - name: Determine tag name

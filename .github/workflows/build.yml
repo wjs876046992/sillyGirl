@@ -166,13 +166,11 @@ jobs:
             echo "tags<<__EOF__" >> $GITHUB_OUTPUT
             echo "${{ env.IMAGE_NAME }}:latest" >> $GITHUB_OUTPUT
             echo "${{ env.IMAGE_NAME }}:${MANUAL_TAG}" >> $GITHUB_OUTPUT
-            echo "${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_OUTPUT
             echo "__EOF__" >> $GITHUB_OUTPUT
           else
-            # 自动构建（分支 push）→ dev + sha，不覆盖 latest
+            # 自动构建（分支 push）→ dev，不覆盖 latest
             echo "tags<<__EOF__" >> $GITHUB_OUTPUT
             echo "${{ env.IMAGE_NAME }}:dev" >> $GITHUB_OUTPUT
-            echo "${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_OUTPUT
             echo "__EOF__" >> $GITHUB_OUTPUT
           fi
 

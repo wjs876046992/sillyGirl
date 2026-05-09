@@ -156,6 +156,22 @@ jobs:
         run: |
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-s -w" -o sillyGirl_linux_arm64
 
+      - name: Determine docker tags
+        id: dockertags
+        shell: bash
+        run: |
+          MANUAL_TAG="${{ inputs.release_tag }}"
+          if [ -n "$MANUAL_TAG" ]; then
+            # 手动发布正式版 → latest + 版本号 + sha
+            echo "tags=${{ env.IMAGE_NAME }}:latest
+${{ env.IMAGE_NAME }}:$MANUAL_TAG
+${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          else
+            # 自动构建（分支 push）→ dev + sha，不覆盖 latest
+            echo "tags=${{ env.IMAGE_NAME }}:dev
+${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -175,9 +191,7 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ${{ steps.dockertags.outputs.tags }}
 
   release:
     needs: [build]

@@ -51,34 +51,24 @@ func stripDevSuffix(v string) string {
 // versionGreater 比较两个版本号，a > b 返回 true
 // 支持格式：v2.1.3 / v2.1-dev.xxxx / v2.1.3-dev.xxxx
 func versionGreater(a, b string) bool {
+	aDev := strings.Contains(a, "-dev.")
+	bDev := strings.Contains(b, "-dev.")
+
 	// 如果两者都不是 dev 版，直接字符串比较
-	if !strings.Contains(a, "-dev.") && !strings.Contains(b, "-dev.") {
+	if !aDev && !bDev {
 		return a > b
 	}
 
-	// 提取版本前缀比较
-	prefixA := stripDevSuffix(a)
-	prefixB := stripDevSuffix(b)
-
-	if prefixA != prefixB {
-		return prefixA > prefixB
+	// 将 dev 版中 -dev. 替换为 .zzz.（zzz > 任何数字的字典序）
+	// 效果：v2.1-dev.xxx → v2.1.zzz.xxx
+	// v2.1.zzz.xxx > v2.1.3 （z > 3, z > 9）
+	// v2.1.zzz.xxx < v2.2.0 （1 < 2）
+	normalize := func(v string) string {
+		return strings.Replace(v, "-dev.", ".zzz-dev.", 1)
 	}
-
-	// 相同前缀：dev 版 >= 非 dev 版（dev 版更新）
-	_, aIsDev := strings.CutPrefix(a, prefixA+"-dev.")
-	_, bIsDev := strings.CutPrefix(b, prefixB+"-dev.")
-
-	if aIsDev && !bIsDev {
-		return true
-	}
-	if !aIsDev && bIsDev {
-		return false
-	}
-
-	// 都是 dev 版，比较时间戳数字
-	aTS, _ := strings.CutPrefix(a, prefixA+"-dev.")
-	bTS, _ := strings.CutPrefix(b, prefixB+"-dev.")
-	return aTS > bTS
+	na := normalize(a)
+	nb := normalize(b)
+	return na > nb
 }
 
 // getLatestReleaseAssetURL 构造 release asset 下载地址

@@ -82,7 +82,7 @@ jobs:
             goos: linux
             goarch: arm64
             ext: ""
-            upx: true
+            upx: false
           - os: ubuntu-latest
             goos: darwin
             goarch: amd64

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -67,6 +68,44 @@ func getLatestReleaseAssetURL(tag string) string {
 	return fmt.Sprintf("https://github.com/wjs876046992/sillyGirl/releases/download/%s/%s", tag, assetName)
 }
 
+// getDownloadURL 根据代理配置返回下载 URL
+// 如果配置了 ghproxy，优先走加速代理
+func getDownloadURL(rawURL string) string {
+	proxyURL := sillyGirl.GetString("ghproxy")
+	if proxyURL != "" {
+		// 去掉末尾斜杠
+		proxyURL = strings.TrimRight(proxyURL, "/")
+		// 用 proxy 拼接下载 URL
+		accelURL := proxyURL + "/" + rawURL
+		console.Debug("使用加速代理下载: %s", accelURL)
+		return accelURL
+	}
+	return rawURL
+}
+
+// createHTTPClientWithProxy 创建带代理的 http.Client
+func createHTTPClientWithProxy(timeout time.Duration) *http.Client {
+	proxyStr := sillyGirl.GetString("ghproxy")
+	if proxyStr == "" {
+		// 没配置代理，直接返回
+		return &http.Client{Timeout: timeout}
+	}
+
+	proxyStr = strings.TrimRight(proxyStr, "/")
+	proxyURL, err := url.Parse(proxyStr)
+	if err != nil {
+		// 代理 URL 格式错误，降级使用
+		return &http.Client{Timeout: timeout}
+	}
+
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		},
+	}
+}
+
 func Init() {
 	initLoc()
 	sillyGirl = MakeBucket("sillyGirl")
@@ -116,21 +155,35 @@ func Init() {
 
 			// 从 GitHub release 下载对应平台的二进制
 			qurl := getLatestReleaseAssetURL(latest_version)
-			console.Debug("正在从 release 获取最新版本 %s 编译文件: %s", latest_version, qurl)
+			// 使用加速代理 URL
+			downloadURL := getDownloadURL(qurl)
+			console.Debug("正在从 release 获取最新版本 %s 编译文件: %s", latest_version, downloadURL)
 
-			client := &http.Client{
-				Timeout: 60 * time.Second,
-			}
-			resp, err := client.Get(qurl)
+			// 创建带代理的 http.Client
+			client := createHTTPClientWithProxy(120 * time.Second)
+			resp, err := client.Get(downloadURL)
 			if err != nil || resp.StatusCode != 200 {
-				console.Error("获取最新编译文件错误：%v (status: %d)", err, func() int {
-					if resp != nil {
-						return resp.StatusCode
+				// 加速代理失败，尝试直连
+				if resp == nil || resp.StatusCode != 200 {
+					console.Warn("加速代理下载失败，尝试直连 GitHub...")
+					client2 := &http.Client{Timeout: 120 * time.Second}
+					resp2, err2 := client2.Get(qurl)
+					if err2 == nil && resp2.StatusCode == 200 {
+						resp = resp2
+						err = nil
+						console.Debug("直连 GitHub 下载成功: %s", qurl)
 					}
-					return 0
-				}())
-				return &storage.Final{
-					Error: fmt.Errorf("升级时貌似网络不太行啊"),
+				}
+				if err != nil || resp.StatusCode != 200 {
+					console.Error("获取最新编译文件错误：%v (status: %d)", err, func() int {
+						if resp != nil {
+							return resp.StatusCode
+						}
+						return 0
+					}())
+					return &storage.Final{
+						Error: fmt.Errorf("升级时貌似网络不太行啊，请检查网络或配置 ghproxy"),
+					}
 				}
 			}
 			defer resp.Body.Close()

@@ -173,7 +173,7 @@ func initCarry() {
 				}
 				var outs []CarryGroup //预测转发群
 				for i := range cgs {
-					if cgs[i].Enable && cgs[i].Out && cgs[i].ID != chat_id {
+					if cgs[i].Enable && cgs[i].Out && cgs[i].ID != source_id {
 						for j := range cgs[i].From {
 							if cgs[i].From[j] == source_id {
 								if len(cgs[i].Allowed) != 0 { //白名单

@@ -52,6 +52,7 @@ func initCarry() {
 				var user_id = s.GetUserID()
 				var content = s.GetContent()
 				var message_id = s.GetMessageID()
+				var source_id string // 采集源标识（群 chat_id 或私聊 user_id）
 				var from *CarryGroup //判断当前消息来自采集源
 				var cgs = cgs
 				var uuid = fmt.Sprintf("%d. ", atomic.AddInt64(&carryCounter, 1))
@@ -73,17 +74,41 @@ func initCarry() {
 					return nil
 				}
 				for i := range cgs {
-					if chat_id == cgs[i].ID && cgs[i].In && cgs[i].Enable {
+					if !cgs[i].In || !cgs[i].Enable {
+						continue
+					}
+					// 群消息采集：按 chat_id 匹配
+					if chat_id != "" && chat_id == cgs[i].ID {
 						from = &cgs[i]
+						source_id = cgs[i].ID
 						break
 					}
+					// 私聊消息采集：按 user_id 字段匹配（兼容历史：ID==user_id）
+					if chat_id == "" {
+						if cgs[i].UserID != "" && user_id == cgs[i].UserID {
+							from = &cgs[i]
+							source_id = cgs[i].UserID
+							break
+						}
+						if cgs[i].UserID == "" && cgs[i].ID != "" && user_id == cgs[i].ID {
+							from = &cgs[i]
+							source_id = cgs[i].ID
+							break
+						}
+					}
 				}
-				if nil == from { //非采集群
+				if nil == from { //非采集源
 					s.Continue()
 					return nil
 				}
+				if source_id == "" {
+					source_id = chat_id
+					if source_id == "" {
+						source_id = user_id
+					}
+				}
 				//采集消息去重逻辑
-				q := NewQueue(chat_id, 50)
+				q := NewQueue(source_id, 50)
 				if from.Deduplication {
 					for _, qm := range q.GetValues() {
 						v := ss.HansSimilarity(qm.Content, content)
@@ -120,16 +145,16 @@ func initCarry() {
 						return nil
 					}
 				}
-				console.Debug("%s 当前采集群 %s", uuid, chat_id)
+				console.Debug("%s 当前采集源 %s", uuid, source_id)
 				//预测采集白名单、黑名单
 				if len(from.Allowed) != 0 { //白名单
 					if !Contains(from.Allowed, user_id) {
-						console.Debug("%s 用户(%s)不在采集群白名单 %v", uuid, chat_id)
+						console.Debug("%s 用户(%s)不在采集群白名单 %v", uuid, source_id)
 						return nil
 					}
 				} else {
 					if Contains(from.Prohibited, user_id) {
-						console.Debug("%s 用户(%s)在采集群黑名单 %v", uuid, chat_id)
+						console.Debug("%s 用户(%s)在采集群黑名单 %v", uuid, source_id)
 						return nil
 					}
 				}
@@ -148,9 +173,9 @@ func initCarry() {
 				}
 				var outs []CarryGroup //预测转发群
 				for i := range cgs {
-					if cgs[i].Enable && cgs[i].Out && cgs[i].ID != chat_id {
+					if cgs[i].Enable && cgs[i].Out && cgs[i].ID != source_id {
 						for j := range cgs[i].From {
-							if cgs[i].From[j] == chat_id {
+							if cgs[i].From[j] == source_id {
 								if len(cgs[i].Allowed) != 0 { //白名单
 									if !Contains(cgs[i].Allowed, user_id) {
 										console.Debug("%s 用户(%s)不在转发群(%s)白名单 %v", uuid, user_id, cgs[i].ID)
@@ -280,7 +305,10 @@ func initCarry() {
 							if name == "" {
 								name = cg.ID
 							}
-							RemListenOnGroup(cg.ID, fmt.Sprintf("已为采集群(%s)关闭监听模式", name))
+							// 私聊采集源不需要 listen/noreply on group
+							if cg.UserID == "" || (cg.UserID != "" && cg.ID != "" && cg.ID != cg.UserID) {
+								RemListenOnGroup(cg.ID, fmt.Sprintf("已为采集群(%s)关闭监听模式", name))
+							}
 							break
 						}
 					}
@@ -296,7 +324,8 @@ func initCarry() {
 							if name == "" {
 								name = ncg.ID
 							}
-							if ncg.In {
+							isPrivateSource := ncg.UserID != "" && (ncg.ID == "" || ncg.ID == ncg.UserID)
+							if ncg.In && !isPrivateSource {
 								if ncg.Enable {
 									AddListenOnGroup(ncg.ID, fmt.Sprintf("已为采集群(%s)开启监听模式", name), ncg.Platform)
 									AddNoReplyGroups(ncg.ID, fmt.Sprintf("已为采集群(%s)开启禁言模式", name), ncg.Platform)
@@ -316,7 +345,8 @@ func initCarry() {
 		} else { //创建
 			if ncg.ID != "" {
 				tmp = append(tmp, ncg)
-				if ncg.In && ncg.Enable {
+				isPrivateSource := ncg.UserID != "" && (ncg.ID == "" || ncg.ID == ncg.UserID)
+				if ncg.In && ncg.Enable && !isPrivateSource {
 					name := ncg.ChatName
 					if name == "" {
 						name = ncg.ID
@@ -344,7 +374,8 @@ func setCgs() {
 		if err != nil {
 			return nil
 		}
-		if cg.In && cg.Enable {
+		isPrivateSource := cg.UserID != "" && (cg.ID == "" || cg.ID == cg.UserID)
+		if cg.In && cg.Enable && !isPrivateSource {
 			name := cg.ChatName
 			if name == "" {
 				name = cg.ID
@@ -369,6 +400,7 @@ type CarryGroup struct {
 	Allowed        []string `json:"allowed"`        //白名单模式
 	Prohibited     []string `json:"prohibited"`     //黑名单模式 Select选择器多选
 	ID             string   `json:"chat_id"`        //群组ID 文字表单
+	UserID         string   `json:"user_id"`        //私聊采集用户ID（可选）
 	ChatName       string   `json:"chat_name"`      //群昵称 文字表单
 	Remark         string   `json:"remark"`         //备注
 	Platform       string   `json:"platform"`       //平台 Select选择器单选
@@ -536,26 +568,34 @@ func init() {
 			})
 			return
 		}
-		v, ok := updateData["chat_id"]
-		if !ok {
+		chatID := ""
+		if v, ok := updateData["chat_id"]; ok {
+			if vv, ok := v.(string); ok {
+				chatID = vv
+			}
+		}
+		userID := ""
+		if v, ok := updateData["user_id"]; ok {
+			if vv, ok := v.(string); ok {
+				userID = vv
+			}
+		}
+		if chatID == "" && userID == "" {
 			ctx.JSON(200, map[string]interface{}{
 				"success":      false,
-				"errorMessage": "群号不能为空",
+				"errorMessage": "chat_id 与 user_id 不能同时为空",
 			})
 			return
 		}
-		chat_id := v.(string)
+		carryID := chatID
+		if carryID == "" {
+			carryID = userID
+		}
 		var cg = CarryGroup{
-			ID: chat_id,
+			ID:     carryID,
+			UserID: userID,
 		}
 		CarryGroups.First(&cg)
-		// if err != nil {
-		// 	ctx.JSON(200, map[string]interface{}{
-		// 		"success":      false,
-		// 		"errorMessage": err.Error(),
-		// 	})
-		// 	return
-		// }
 		for key, value := range updateData {
 			switch key {
 			case "in":
@@ -585,6 +625,14 @@ func init() {
 			case "prohibited":
 				if prohibited, ok := value.([]interface{}); ok {
 					cg.Prohibited = toStringSlice(prohibited)
+				}
+			case "chat_id":
+				if chatID, ok := value.(string); ok {
+					cg.ID = chatID
+				}
+			case "user_id":
+				if userID, ok := value.(string); ok {
+					cg.UserID = userID
 				}
 			case "chat_name":
 				if chatName, ok := value.(string); ok {
@@ -623,7 +671,10 @@ func init() {
 		if cg.CreatedAt == 0 {
 			cg.CreatedAt = int(time.Now().Unix())
 		}
-		CarryGroups.Set(chat_id, utils.JsonMarshal(cg))
+		if cg.ID == "" {
+			cg.ID = cg.UserID
+		}
+		CarryGroups.Set(cg.ID, utils.JsonMarshal(cg))
 		if err != nil {
 			ctx.JSON(200, map[string]interface{}{
 				"success":      false,

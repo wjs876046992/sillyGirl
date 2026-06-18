@@ -254,15 +254,27 @@ func init() {
 			ar := strings.SplitN(bk, ".", 2)
 			if len(ar) == 2 && ar[0] == "plugins" && changes[bk] {
 				uuid := ar[1]
-				if content, ok := v.(string); ok && content != "" && content != "install" {
-					for _, f := range Functions {
-						if f.UUID == uuid && f.Suffix == ".js" && f.Path != "" {
-							if err := os.WriteFile(f.Path, []byte(content), 0644); err == nil {
-								if f.Reload != nil {
-									go f.Reload()
-								}
+				if content, ok := v.(string); ok {
+					// 支持 reload 值直接触发重载
+					if content == "reload" {
+						for _, f := range Functions {
+							if f.UUID == uuid && f.Reload != nil {
+								go f.Reload()
+								break
 							}
-							break
+						}
+						continue
+					}
+					if content != "" && content != "install" {
+						for _, f := range Functions {
+							if f.UUID == uuid && f.Suffix == ".js" && f.Path != "" {
+								if err := os.WriteFile(f.Path, []byte(content), 0644); err == nil {
+									if f.Reload != nil {
+										go f.Reload()
+									}
+								}
+								break
+							}
 						}
 					}
 				}

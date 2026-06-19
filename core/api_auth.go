@@ -76,7 +76,9 @@ func init() {
 			auths = append(auths, auth)
 			console.Log("登录成功，当前有效令牌数%d，总数%d", len(ValidAuths()), len(auths))
 			ctx.SetCookie("token", token, 86400, "/", "", false, true)
+		ctx.Header("X-Token", token)
 			ctx.JSON(200, map[string]interface{}{
+				"token":           token,
 				"status":           "ok",
 				"type":             "account",
 				"currentAuthority": "admin",

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -175,6 +176,39 @@ func getSiteImage(site string) string {
 	default:
 		return ""
 	}
+}
+
+// getGoodsImage 从 MongoDB 订单记录中提取商品图片 URL
+// 拼多多: doc.data.goods_thumbnail_url
+// 淘宝: doc.data.item_img
+// 京东: 无商品图片字段
+func getGoodsImage(site string, doc bson.M) string {
+	raw := doc["data"]
+	if raw == nil {
+		return ""
+	}
+	// 通用方案：Marshal → Unmarshal 任何 map 类型
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return ""
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return ""
+	}
+	var key string
+	switch site {
+	case "pdd":
+		key = "goods_thumbnail_url"
+	case "tb":
+		key = "item_img"
+	default:
+		return ""
+	}
+	if s, ok := m[key].(string); ok && s != "" {
+		return s
+	}
+	return ""
 }
 
 // ========== API 路由 ==========
@@ -384,7 +418,6 @@ func handleFenyongOrders(c *gin.Context) {
 		options.Find().SetSort(bson.M{"created_time": -1}),
 		options.Find().SetSkip(skip),
 		options.Find().SetLimit(int64(pageSize)),
-		options.Find().SetProjection(bson.M{"data": 0}),
 	)
 	if e != nil {
 		c.JSON(200, FenyongOrderResult{Success: true, Data: []FenyongOrder{}, Page: current, Total: 0})
@@ -502,7 +535,7 @@ func convertOrders(docs []bson.M) []FenyongOrder {
 			o.Name = v
 		}
 		if v, ok := item["sku_name"].(string); ok {
-			o.SkuName = truncateText(v, 40)
+			o.SkuName = v
 		}
 		if v, ok := item["order_id"].(string); ok {
 			o.OrderID = v
@@ -510,10 +543,16 @@ func convertOrders(docs []bson.M) []FenyongOrder {
 		if v, ok := item["sku_id"].(string); ok {
 			o.SkuID = v
 		}
-		if v, ok := item["created_time"].(int64); ok {
-			o.CreatedTime = v
-		} else if v, ok := item["created_time"].(primitive.DateTime); ok {
-			o.CreatedTime = v.Time().Unix()
+		// created_time 可能是 int64 / primitive.DateTime / float64 / int32
+		switch ct := item["created_time"].(type) {
+		case int64:
+			o.CreatedTime = ct
+		case int32:
+			o.CreatedTime = int64(ct)
+		case float64:
+			o.CreatedTime = int64(ct)
+		case primitive.DateTime:
+			o.CreatedTime = ct.Time().Unix()
 		}
 
 		if site, ok := item["site"].(string); ok {
@@ -522,8 +561,27 @@ func convertOrders(docs []bson.M) []FenyongOrder {
 			orderID, _ := item["order_id"].(string)
 			status, _ := item["status"].(string)
 			o.Status = fmt.Sprintf("%s %s %s %s", getSiteName(site), skuID, orderID, status)
-			// Image 设为平台 logo，不覆盖存在 MongoDB 里的商品图片字段
-			o.Image = getSiteImage(site)
+			// Image: 从 data 子文档提取
+			if o.Image == "" {
+				if d, _ := item["data"].(bson.M); d != nil {
+					switch site {
+					case "pdd":
+						if img, _ := d["goods_thumbnail_url"].(string); img != "" {
+							o.Image = img
+						}
+					case "tb":
+						if img, _ := d["item_img"].(string); img != "" {
+							if strings.HasPrefix(img, "//") {
+								img = "https:" + img
+							}
+							o.Image = img
+						}
+					}
+				}
+				if o.Image == "" {
+					o.Image = getSiteImage(site)
+				}
+			}
 		}
 
 		// 绑定信息

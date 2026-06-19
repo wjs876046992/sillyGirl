@@ -80,6 +80,7 @@ func init() {
 				"status":           "ok",
 				"type":             "account",
 				"currentAuthority": "admin",
+				"token":            token,
 			})
 		} else {
 			ctx.JSON(200, map[string]interface{}{
@@ -160,8 +161,18 @@ func init() {
 	})
 }
 
+func GetToken(c *gin.Context) string {
+	// 优先从 X-Token header 取
+	token := c.GetHeader("X-Token")
+	if token == "" {
+		// fallback: cookie
+		token, _ = c.Cookie("token")
+	}
+	return token
+}
+
 func DestroyAuth(c *gin.Context) {
-	token, _ := c.Cookie("token")
+	token := GetToken(c)
 	auth, _ := CheckAuth(token)
 	if auth != nil {
 		auth.ExpiredAt = int(time.Now().Unix())
@@ -192,7 +203,7 @@ func RequireAuth(c *gin.Context) {
 	if password == "" {
 		return
 	}
-	token, _ := c.Cookie("token")
+	token := GetToken(c)
 	_, err := CheckAuth(token)
 	if err != nil && !checkTempAuth(token) {
 		c.JSON(401, map[string]interface{}{

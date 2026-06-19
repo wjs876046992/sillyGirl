@@ -274,6 +274,7 @@ func Init() {
 	initListenReply()
 	// initPluginFile()
 	initWebPluginList()
+	initFenyongAPI()
 	go initPluginList()
 	initPluginPublish()
 

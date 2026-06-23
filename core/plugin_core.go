@@ -66,12 +66,17 @@ var RegistFuncs = map[string]interface{}{}
 var plugins = MakeBucket("plugins")
 
 type Route struct {
-	Path      string  `json:"path"`
-	Name      string  `json:"name"`
-	Component string  `json:"component,omitempty"`
-	Routes    []Route `json:"routes,omitempty"`
+	Path        string  `json:"path"`
+	Name        string  `json:"name"`
+	Component   string  `json:"component,omitempty"`
+	Routes      []Route `json:"routes,omitempty"`
 	// Key       string  `json:"key,omitempty"`
-	CreateAt string `json:"create_at"`
+	CreateAt    string   `json:"create_at"`
+	Icon        string   `json:"icon,omitempty"`
+	Origin      string   `json:"origin,omitempty"`
+	Author      string   `json:"author,omitempty"`
+	Version     string   `json:"version,omitempty"`
+	Description string   `json:"description,omitempty"`
 }
 
 func CancelPluginlistening(uuid string) {

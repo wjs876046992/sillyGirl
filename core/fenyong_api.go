@@ -558,9 +558,11 @@ func convertOrders(docs []bson.M) []FenyongOrder {
 		if site, ok := item["site"].(string); ok {
 			o.Site = site
 			skuID, _ := item["sku_id"].(string)
+			o.SkuID = skuID
 			orderID, _ := item["order_id"].(string)
+			o.OrderID = orderID
 			status, _ := item["status"].(string)
-			o.Status = fmt.Sprintf("%s %s %s %s", getSiteName(site), skuID, orderID, status)
+			o.Status = status
 			// Image: 从 data 子文档提取
 			if o.Image == "" {
 				if d, _ := item["data"].(bson.M); d != nil {

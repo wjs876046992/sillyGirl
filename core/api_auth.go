@@ -131,6 +131,11 @@ func init() {
 					Name:      name,
 					Component: "./Script",
 					CreateAt:  f.CreateAt,
+					Icon:      f.Icon,
+					Origin:    f.Origin,
+					Author:    f.Author,
+					Version:   f.Version,
+					Description: f.Description,
 				})
 			}
 		}

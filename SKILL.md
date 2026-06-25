@@ -174,7 +174,7 @@ ssh pagermaid@192.168.1.12 "bash /tmp/deploy-test.sh v2.1.6"
 
 #### Step 8: CI 自动清理
 
-正式版发布后，build.yml 会自动删除所有 pre-release 的 dev 构建。
+正式版发布后，build.yml 会自动删除所有 pre-release 的 dev 构建 + git tags。同时 release.js 也会在本地做同样的清理（双重保险）。
 
 ## Release Notes 模板
 
@@ -235,9 +235,9 @@ ssh pagermaid@192.168.1.12 "bash /tmp/deploy-test.sh <版本号>"
 |------|------|
 | gh auth expired | `gh auth login` |
 | 远程仓库不对 | `git remote set-url origin git@github.com:wjs876046992/sillyGirl.git` |
-| CI 未触发 | 确认 tag 推送到 v2.* 分支 |
+| CI 未触发 | 确认使用 `gh workflow run build.yml --field release_tag=v2.1.x` 手动触发 |
 | 测试 SSH 失败 | `ssh -T pagermaid@192.168.1.12` 检查密钥 |
-| pre-release 未清理 | 手动 `gh release list --json isPrerelease,tagName | jq` |
+| pre-release 未清理 | `gh release list --json isPrerelease,tagName | jq '.[] | select(.isPrerelease) | .tagName'` 查看后手动删除 |
 
 ## CI Build Workflow 要点
 

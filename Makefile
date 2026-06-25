@@ -1,6 +1,6 @@
 .PHONY: build
 
-BINARY_NAME=sillyGirl
+BINARY_NAME=sillyplus
 
 build:
 	GOARCH=amd64 GOOS=darwin go build -o ${BINARY_NAME}-darwin -ldflags "-s -w" main.go

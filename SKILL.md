@@ -7,64 +7,72 @@ description: 发布 sillyGirl 新版本的标准化流程。适用于 wjs8760469
 
 ## 前置条件
 
-- 工作目录：`/Users/hermanwu/Work/herman/sillygirl/sillyGirl`
+- 工作目录：项目根目录（sillyGirl 仓库）
 - 远程仓库：`git@github.com:wjs876046992/sillyGirl.git`
 - 发布分支：`v2.1`
+- 测试服务器：`pagermaid@192.168.1.12`，部署目录 `/home/pagermaid/docker/sillyplus`
 - 已配置 `gh` CLI 并登录
 - SSH 密钥配置，可免密连接测试机
 
-## 工作模式
+## 触发约定
+
+| 用户说 | 执行模式 |
+|--------|---------|
+| `部署测试`、`自测一下`、`本地部署` | **模式 A**：本地 make build → scp → deploy-test.sh |
+| `发版`、`发布 v2.1.6`、`发布新版本` | **模式 B**：tag → CI → download → scp → deploy-test.sh → 清理 dev releases/tags |
+| `预演发布`、`dry-run`、`看看发布流程` | **模式 B dry-run**：只展示流程不执行 |
+
+---
+
+## 模式 A：本地开发自测
+
+快速迭代用，本地 `go build` → 直接 scp 到测试服务器。
 
 ```
-代码修改流程（反复）                 发布流程（偶尔）
-┌───────────────┐                ┌────────────────┐
-│ 1. 建分支      │                │ 1. release.js  │
-│ 2. 改代码提交  │  ←→  dev迭代   │ 2. 等 CI       │
-│ 3. 自测部署    │                │ 3. 更新 release│
-└───────────────┘                │ 4. 部署测试机  │
-                                 └────────────────┘
+make build → scp sillyplus → deploy-test.sh → pm2 restart → 看日志
 ```
 
-## 代码修改流程
-
-### 1. 创建分支
-
-从 `v2.1` 建分支，命名规则：`fix/xxx`、`feat/xxx`、`chore/xxx`
+### 步骤
 
 ```bash
-git checkout v2.1
-git checkout -b <类型>/<简短描述>
-# 改代码...
-git add <改动的文件>
-git commit -m "<类型>: <简短描述>"
-git push origin <分支名>
-```
+# 1. 本地构建（产物名：sillyplus）
+make build        # 或 make run 先本地跑一下
 
-### 2. 自测
+# 2. 上传到测试服务器
+scp sillyplus pagermaid@192.168.1.12:/tmp/sillyplus
 
-```bash
-# 本地构建
-make run
-
-# 上传到测试机
-scp sillyGirl pagermaid@192.168.1.12:/tmp/sillyGirl
-
-# 部署
+# 3. 远程部署（使用 deploy-test.sh）
+ssh pagermaid@192.168.1.12 "bash /tmp/deploy-test.sh <版本号>"
+# 或者不用脚本，手动部署：
 ssh pagermaid@192.168.1.12 '
   cd /home/pagermaid/docker/sillyplus && \
-  cp /tmp/sillyGirl sillyGirl_linux_amd64 && \
-  pm2 restart sillygirl && \
-  pm2 logs sillygirl --lines 20
+  cp /tmp/sillyplus sillyplus && \
+  pm2 restart sillyplus && \
+  sleep 5 && pm2 status sillyplus
 '
+
+# 4. 看日志
+ssh pagermaid@192.168.1.12 "pm2 logs sillyplus --lines 30"
 ```
 
-## 发布流程（使用 release.js）
+> **注意**：本地构建产物直接叫 `sillyplus`，无需重命名。
 
-### 推荐方式：Workflow 脚本
+---
+
+## 模式 B：正式发布（GitHub Workflow）
+
+通过 CI 构建 → GitHub Release → 下载 → 部署到测试服务器。适用于正式版本发布。
+
+```
+git tag → push tag → gh workflow run → 等 CI 完成 → gh release download → scp → deploy-test.sh → pm2 restart
+```
+
+### 推荐方式：release.js 自动化
 
 ```bash
+cd <项目根目录>
+
 # 自动检测版本，完整发布 + 测试部署
-cd /Users/hermanwu/Work/herman/sillygirl/sillyGirl
 node release.js
 
 # 强制 minor bump
@@ -85,7 +93,7 @@ node release.js --dry-run
 #### Step 1: 预检
 
 ```bash
-cd /Users/hermanwu/Work/herman/sillygirl/sillyGirl
+cd <项目根目录>
 gh auth status                # 确认登录
 git remote get-url origin     # 确认远程仓库
 git branch --show-current     # 确认在 v2.* 分支
@@ -106,7 +114,7 @@ git log "$LAST_TAG"..HEAD --oneline --no-merges
 # --bump minor → minor+1, patch=0
 ```
 
-#### Step 3: 创建 Tag
+#### Step 3: 创建 Tag 并推送
 
 ```bash
 git tag -a v2.1.6 -m "Release v2.1.6"
@@ -114,7 +122,7 @@ git push origin v2.1
 git push origin v2.1.6
 ```
 
-#### Step 4: 触发 CI
+#### Step 4: 触发 CI 构建
 
 ```bash
 gh workflow run build.yml --ref v2.1.6 --field release_tag=v2.1.6
@@ -137,26 +145,32 @@ echo "$CONCLUSION"  # success / failure / cancelled
 #### Step 6: 更新 Release Notes
 
 ```bash
-# 自动生成 changelog
 gh release edit v2.1.6 --notes-file /tmp/release_notes_v2.1.6.md
 ```
 
-#### Step 7: 部署到测试机
+#### Step 7: 下载并部署到测试服务器
 
 ```bash
-# 下载二进制
-gh release download v2.1.6 --pattern 'sillyGirl_linux_amd64' -O /tmp/sillyGirl_linux_amd64
+# 7a. 从 GitHub Release 下载二进制（CI 产物名带平台后缀，需重命名）
+gh release download v2.1.6 --pattern 'sillyGirl_linux_amd64' -O /tmp/sillyplus
 
-# 上传并部署
-scp /tmp/sillyGirl_linux_amd64 pagermaid@192.168.1.12:/tmp/sillyGirl_linux_amd64.v2.1.6
+# 7b. 上传到测试服务器
+scp /tmp/sillyplus pagermaid@192.168.1.12:/tmp/sillyplus.v2.1.6
 
+# 7c. 远程部署
 ssh pagermaid@192.168.1.12 '
   cd /home/pagermaid/docker/sillyplus && \
-  cp /tmp/sillyGirl_linux_amd64.v2.1.6 sillyGirl_linux_amd64 && \
-  pm2 restart sillygirl && \
-  sleep 5 && pm2 status sillygirl
+  cp /tmp/sillyplus.v2.1.6 sillyplus && \
+  pm2 restart sillyplus && \
+  sleep 5 && pm2 status sillyplus
 '
+
+# 或者使用 deploy-test.sh：
+scp deploy-test.sh pagermaid@192.168.1.12:/tmp/
+ssh pagermaid@192.168.1.12 "bash /tmp/deploy-test.sh v2.1.6"
 ```
+
+> **注意**：CI 产物名是 `sillyGirl_linux_amd64`，下载后需重命名为 `sillyplus` 再上传。
 
 #### Step 8: CI 自动清理
 
@@ -192,37 +206,28 @@ ssh pagermaid@192.168.1.12 '
 
 ## deploy-test.sh
 
-可选的自动化部署脚本，放在项目根目录：
+服务器端自动化部署脚本，支持备份 + 回滚 + 健康检查。详细逻辑见 `deploy-test.sh` 源码。
+
+### 用法
 
 ```bash
-#!/bin/bash
-set -euo pipefail
-TEST_DIR="${1:-/home/pagermaid/docker/sillyplus}"
-TAG="${2:-v2.1.6}"
-BINARY_NAME="sillyGirl_linux_amd64"
-REMOTE_BINARY="${TEST_DIR}/${BINARY_NAME}"
-TEMP_BINARY="/tmp/${BINARY_NAME}.${TAG}"
-BACKUP_BINARY="${REMOTE_BINARY}.backup.$(date +%s)"
+# 1. 先上传二进制文件
+scp sillyplus pagermaid@192.168.1.12:/tmp/sillyplus.<版本号>
 
-[ -f "$TEMP_BINARY" ] || { echo "ERROR: binary not found"; exit 1; }
-[ -f "$REMOTE_BINARY" ] && cp "$REMOTE_BINARY" "$BACKUP_BINARY"
-pm2 stop sillygirl 2>/dev/null || true; sleep 2
-chmod +x "$TEMP_BINARY"
-mv "$TEMP_BINARY" "$REMOTE_BINARY"
-pm2 startOrRestart sillygirl
-sleep 5
-pm2 describe sillygirl --no-style | grep -q "online" || {
-  [ -f "$BACKUP_BINARY" ] && mv "$BACKUP_BINARY" "$REMOTE_BINARY"; pm2 restart sillygirl
-  exit 1
-}
-rm -f "$BACKUP_BINARY" 2>/dev/null || true
-pm2 status sillygirl 2>/dev/null || true
+# 2. 上传部署脚本
+scp deploy-test.sh pagermaid@192.168.1.12:/tmp/
+
+# 3. 执行部署
+ssh pagermaid@192.168.1.12 "bash /tmp/deploy-test.sh <版本号>"
 ```
 
-```bash
-chmod +x deploy-test.sh
-# 用法：scp deploy-test.sh pagermaid@192.168.1.12:/tmp/ && ssh pagermaid@192.168.1.12 "bash /tmp/deploy-test.sh /home/pagermaid/docker/sillyplus v2.1.6"
-```
+### 流程说明
+
+1. 校验二进制文件（ELF 格式检查）
+2. 备份当前运行的二进制
+3. 停服 → 替换 → 重启（PM2 管理）
+4. 等待 25 秒（服务器有 20 秒延迟启动机制）
+5. 健康检查：失败则自动回滚
 
 ## Troubleshooting
 
@@ -236,12 +241,11 @@ chmod +x deploy-test.sh
 
 ## CI Build Workflow 要点
 
-`.github/workflows/build.yml` 支持三种触发模式：
+`.github/workflows/build.yml` 仅支持手动触发：
 
 | 触发方式 | 行为 | Release 类型 |
 |---------|------|-------------|
-| push 到 v2.* | 自动 dev build | pre-release |
-| workflow_dispatch + release_tag | 正式 release | release |
-| pull_request | 仅构建 | 无 release |
+| `workflow_dispatch` + 留空 | 自动 dev build | pre-release |
+| `workflow_dispatch` + release_tag | 正式 release | release |
 
-正式 release（`mode=update`）触发后自动清理所有 pre-release dev 构建。
+正式 release（`mode=update`）触发后自动清理所有 pre-release dev 构建 + git tags。

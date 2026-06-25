@@ -16,10 +16,11 @@ export const meta = {
     { title: '🔢 版本确定', detail: 'Parse commits, determine version' },
     { title: '📝 Changelog 生成', detail: 'Group commits by type' },
     { title: '🏷️ Tag + CI + Release + Deploy', detail: 'Dry-run remaining steps' },
+    { title: '🧹 清理 dev releases', detail: '删除新旧 tag 之间的所有 pre-release' },
   ],
 };
 
-const CWD = '/Users/hermanwu/Work/herman/sillygirl/sillyGirl';
+const CWD = process.cwd();
 const TEST_HOST = "pagermaid@192.168.1.12";
 const TEST_DIR = "/home/pagermaid/docker/sillyplus";
 
@@ -224,10 +225,16 @@ const changelogContent = [
 ].filter(Boolean).join('\n');
 
 if (!DRY_RUN) {
-  // We can't write files in Workflow context, but in dry-run mode this is fine
-  log("Release Notes 预览（不会写入文件，dry-run 模式）:");
+  await bash(
+    "写入 Release Notes 文件",
+    "cat > " + bodyFile + " << 'CHANGELOG_EOF'\n" + changelogContent + "\nCHANGELOG_EOF",
+    { label: "write notes", phase: "📝 生成 Release Notes", safe: true }
+  );
+  log("✓ Release Notes 已写入: " + bodyFile);
+} else {
+  log("Release Notes 预览（dry-run 模式，未写入文件）:");
+  log(changelogContent);
 }
-log(changelogContent);
 
 // ─── Phase 3: Dry-run remaining ─────────────────────────────────────────────
 
@@ -256,10 +263,15 @@ if (DRY_RUN === true) {
   log("📋 [DRY RUN] gh release edit " + NEW_VERSION + " --notes-file " + bodyFile);
   log("");
   if (!SKIP_DEPLOY) {
-    log("🖥️ [DRY RUN] gh release download " + NEW_VERSION + " --pattern 'sillyGirl_linux_amd64' -O /tmp/sillyGirl_linux_amd64");
-    log("🖥️ [DRY RUN] scp /tmp/sillyGirl_linux_amd64 " + TEST_HOST + ":/tmp/sillyGirl_linux_amd64." + NEW_VERSION);
+    log("🖥️ [DRY RUN] gh release download " + NEW_VERSION + " --pattern 'sillyGirl_linux_amd64' -O /tmp/sillyplus");
+    log("🖥️ [DRY RUN] mv /tmp/sillyGirl_linux_amd64 → /tmp/sillyplus");
+    log("🖥️ [DRY RUN] scp /tmp/sillyplus " + TEST_HOST + ":/tmp/sillyplus." + NEW_VERSION);
     log("🖥️ [DRY RUN] ssh " + TEST_HOST + ' "bash -s" < deploy-test.sh ' + TEST_DIR + ' ' + NEW_VERSION);
   }
+  log("");
+  log("🧹 [DRY RUN] 删除 " + lastTag + " ~ " + NEW_VERSION + " 之间所有 pre-release:");
+  log("   gh release list --json tagName,isPrerelease | 筛选 dev 版本");
+  log("   逐个执行 gh release delete + git tag -d + git push origin --delete");
   log("");
   log("========== 没有实际执行任何操作 ==========");
 } else {
@@ -273,9 +285,6 @@ if (DRY_RUN === true) {
     { label: "tag", phase: "🏷️ Tag + CI + Release + Deploy" }
   );
   log("✓ Tag 已推送: " + NEW_VERSION);
-
-  // Write changelog
-  // Can't write files in Workflow context in dry-run, skip for now
 
   // Trigger CI
   await bash(
@@ -303,20 +312,53 @@ if (DRY_RUN === true) {
   if (!SKIP_DEPLOY) {
     await bash(
       "下载二进制",
-      "gh release download '" + NEW_VERSION + "' --pattern 'sillyGirl_linux_amd64' -O /tmp/sillyGirl_linux_amd64 && file /tmp/sillyGirl_linux_amd64 | grep -q 'ELF' && echo 'valid' || echo 'invalid'",
+      "gh release download '" + NEW_VERSION + "' --pattern 'sillyGirl_linux_amd64' -O /tmp/sillyplus && mv /tmp/sillyGirl_linux_amd64 /tmp/sillyplus 2>/dev/null; file /tmp/sillyplus | grep -q 'ELF' && echo 'valid' || echo 'invalid'",
       { label: "download", phase: "🖥️ 部署测试机" }
     );
     await bash(
       "上传到测试机",
-      "scp /tmp/sillyGirl_linux_amd64 " + TEST_HOST + ":/tmp/sillyGirl_linux_amd64." + NEW_VERSION,
+      "scp /tmp/sillyplus " + TEST_HOST + ":/tmp/sillyplus." + NEW_VERSION,
       { label: "scp", phase: "🖥️ 部署测试机" }
     );
     await bash(
       "远程部署",
-      "ssh " + TEST_HOST + " 'bash -s' <<'EOF'\nset -euo pipefail\ncd /home/pagermaid/docker/sillyplus && cp /tmp/sillyGirl_linux_amd64." + NEW_VERSION + " sillyGirl_linux_amd64 && pm2 restart sillygirl && sleep 5 && pm2 status sillygirl\nEOF",
+      "ssh " + TEST_HOST + " 'bash -s' <<'EOF'\nset -euo pipefail\ncd /home/pagermaid/docker/sillyplus && cp /tmp/sillyplus." + NEW_VERSION + " sillyplus && pm2 restart sillyplus && sleep 5 && pm2 status sillyplus\nEOF",
       { label: "deploy", phase: "🖥️ 部署测试机" }
     );
   }
+
+  // ─── Phase 4: Cleanup dev releases ───────────────────────────────────────────
+
+  phase("🧹 清理 dev releases & tags");
+
+  const cleanupResult = await bash(
+    "删除旧版与新版之间的所有 pre-release",
+    "PRE_TAGS=$(gh release list --repo $(git remote get-url origin | sed 's/git@github.com://;s/\\.git$//') --limit 100 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == true) | .tagName' 2>/dev/null | grep '^v2\\.' | while read tag; do\n" +
+    "  TAG_VER=$(echo \"$tag\" | sed 's/^v//')\n" +
+    "  NEW_VER=\"" + NEW_VERSION + "\"\n" +
+    "  LAST_VER=\"" + lastTag + "\"\n" +
+    "  # 只删除版本号在 lastTag ~ NEW_VERSION 之间的 pre-release\n" +
+    "  if [ \"$TAG_VER\" \\> \"$LAST_VER\" ] && [ \"$TAG_VER\" \\< \"$NEW_VER\" ]; then\n" +
+    "    echo \"$tag\"\n" +
+    "  fi\n" +
+    "done)\n\n" +
+    "if [ -z \"$PRE_TAGS\" ]; then\n" +
+    "  echo '没有需要清理的 pre-release'\n" +
+    "else\n" +
+    "  echo \"$PRE_TAGS\" | while read tag; do\n" +
+    "    if [ -n \"$tag\" ]; then\n" +
+    "      echo \"删除 release: $tag\"\n" +
+    "      gh release delete \"$tag\" -y 2>/dev/null || true\n" +
+    "      echo \"删除 git tag: $tag\"\n" +
+    "      git tag -d \"$tag\" 2>/dev/null || true\n" +
+    "      git push origin --delete \"$tag\" 2>/dev/null || true\n" +
+    "    fi\n" +
+    "  done\n" +
+    "  echo '清理完成'\n" +
+    "fi",
+    { label: "cleanup", phase: "🧹 清理 dev releases" }
+  );
+  log(cleanupResult);
 
   log("\n🎉🎉🎉  发布完成！" + NEW_VERSION + "  🎉🎉🎉");
 }

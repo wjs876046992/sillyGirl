@@ -11,7 +11,7 @@
 set -euo pipefail
 
 TEST_DIR="/home/pagermaid/docker/sillyplus"
-PM2="/home/pagermaid/.nvm/versions/node/v24.13.0/bin/pm2"
+PM2=$(which pm2 2>/dev/null || echo "/home/pagermaid/.nvm/versions/node/v24.13.0/bin/pm2")
 BINARY_NAME="sillyplus"
 VERSION="${1:-}"
 REMOTE_BINARY="${TEST_DIR}/${BINARY_NAME}"

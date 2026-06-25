@@ -91,7 +91,7 @@ type FenyongOrderContent struct {
 type FenyongBind struct {
 	Platform string `json:"platform"`
 	UserID   string `json:"user_id"`
-	Nickname string `json:"nickname,omitempty"`
+	UserName string `json:"user_name,omitempty"`
 }
 
 type FenyongOrderResult struct {
@@ -101,28 +101,28 @@ type FenyongOrderResult struct {
 	Total   int            `json:"total"`
 }
 
-type FenyongPlatformStats struct {
+// FenyongStats 统一的佣金统计结构
+type FenyongStats struct {
 	Orders   int64   `json:"orders"`
 	Estimate float64 `json:"estimate"`
 	Actual   float64 `json:"actual"`
 }
 
-type FenyongPeriodStats struct {
+// FenyongCrossItem site × 时段 交叉统计
+type FenyongCrossItem struct {
+	Site     string  `json:"site"`
+	Period   string  `json:"period"`
 	Orders   int64   `json:"orders"`
 	Estimate float64 `json:"estimate"`
 	Actual   float64 `json:"actual"`
 }
 
+// FenyongDashboard 仪表盘数据（双维度 + 交叉）
 type FenyongDashboard struct {
-	Success         bool                            `json:"success"`
-	Today           FenyongPeriodStats              `json:"today"`
-	Yesterday       FenyongPeriodStats              `json:"yesterday"`
-	Last7Days       FenyongPeriodStats              `json:"last7days"`
-	LastMonth       FenyongPeriodStats              `json:"lastMonth"`
-	Platforms       map[string]FenyongPlatformStats `json:"platforms"`
-	TotalSettled    float64                         `json:"total_settled"`
-	TotalUnsettled  float64                         `json:"total_unsettled"`
-	TotalOrders     int64                           `json:"total_orders"`
+	Success bool                    `json:"success"`
+	ByTime  map[string]FenyongStats `json:"by_time"`
+	BySite  map[string]FenyongStats `json:"by_site"`
+	Cross   []FenyongCrossItem      `json:"cross"`
 }
 
 type FenyongRefreshResult struct {
@@ -225,12 +225,12 @@ func initFenyongAPI() {
 // facetGroupResult $group 后的公共子文档
 type fgPlatform struct {
 	Site     string  `bson:"_id"`
-	Count    int64   `bson:"count"`
+	Orders   int64   `bson:"orders"`
 	Estimate float64 `bson:"estimate"`
 	Actual   float64 `bson:"actual"`
 }
 type fgPeriod struct {
-	Count    int64   `bson:"count"`
+	Orders   int64   `bson:"orders"`
 	Estimate float64 `bson:"estimate"`
 	Actual   float64 `bson:"actual"`
 }
@@ -238,14 +238,20 @@ type fgAmount struct {
 	Estimate float64 `bson:"estimate"`
 	Actual   float64 `bson:"actual"`
 }
+type fgCross struct {
+	Site     string  `bson:"site"`
+	Period   string  `bson:"period"`
+	Orders   int64   `bson:"orders"`
+	Estimate float64 `bson:"estimate"`
+	Actual   float64 `bson:"actual"`
+}
 type facetDashboardResult struct {
-	Platforms []fgPlatform `bson:"platforms"`
 	Today     []fgPeriod   `bson:"today"`
-	Yesterday []fgPeriod   `bson:"yesterday"`
 	Last7Days []fgPeriod   `bson:"last7days"`
-	LastMonth []fgPeriod   `bson:"lastmonth"`
-	Settled   []fgAmount   `bson:"settled"`
-	Unsettled []fgAmount   `bson:"unsettled"`
+	LastMonth []fgPeriod   `bson:"lastMonth"`
+	AllTime   []fgPeriod   `bson:"all_time"`
+	BySite    []fgPlatform `bson:"by_site"`
+	Cross     []fgCross    `bson:"cross"`
 }
 
 // ---------- 首页仪表盘 ----------
@@ -259,57 +265,89 @@ func handleFenyongDashboard(c *gin.Context) {
 
 	now := time.Now()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
-	yesterdayStart := todayStart - 86400
 	last7Start := todayStart - 7*86400
-	lastMonthStart := todayStart - 31*86400
+	last30Start := todayStart - 30*86400
 
-	timeFilters := map[string]bson.M{
-		"today":     {"created_time": bson.M{"$gte": todayStart}},
-		"yesterday": {"created_time": bson.M{"$gte": yesterdayStart, "$lt": todayStart}},
-		"last7days": {"created_time": bson.M{"$gte": last7Start, "$lt": todayStart}},
-		"lastmonth": {"created_time": bson.M{"$gte": lastMonthStart, "$lt": todayStart}},
+	// 通用 $group 阶段：汇总所有匹配文档
+	allGroup := bson.D{{Key: "$group", Value: bson.M{
+		"_id":      nil,
+		"orders":   bson.M{"$sum": 1},
+		"estimate": bson.M{"$sum": "$estimate"},
+		"actual":   bson.M{"$sum": "$actual"},
+	}}}
+
+	// 按 site 分组
+	siteGroup := bson.D{{Key: "$group", Value: bson.M{
+		"_id":      "$site",
+		"orders":   bson.M{"$sum": 1},
+		"estimate": bson.M{"$sum": "$estimate"},
+		"actual":   bson.M{"$sum": "$actual"},
+	}}}
+
+	// 时间范围 match 辅助函数
+	timeMatch := func(start, end int64) bson.D {
+		cond := bson.M{"$gte": start}
+		if end > 0 {
+			cond["$lt"] = end
+		}
+		return bson.D{{Key: "$match", Value: bson.M{"created_time": cond}}}
 	}
 
-	fyDays := getSettleDays()
-	cutoffTime := now.Unix() - fyDays*86400
-
+	// 单次 $facet 查询，同时完成两个维度的聚合
 	facetFacets := bson.M{
-		"platforms": bson.A{
-			bson.D{{Key: "$match", Value: bson.M{"created_time": bson.M{"$gte": todayStart}}}},
-			bson.D{{Key: "$group", Value: bson.M{
-				"_id":      "$site",
-				"count":    bson.M{"$sum": 1},
-				"estimate": bson.M{"$sum": "$estimate"},
-				"actual":   bson.M{"$sum": "$actual"},
-			}}},
-		},
+		// ===== 时间维度 =====
 		"today": bson.A{
-			bson.D{{Key: "$match", Value: timeFilters["today"]}},
-			bson.D{{Key: "$group", Value: bson.M{"_id": 1, "count": bson.M{"$sum": 1}, "estimate": bson.M{"$sum": "$estimate"}, "actual": bson.M{"$sum": "$actual"}}}},
-		},
-		"yesterday": bson.A{
-			bson.D{{Key: "$match", Value: timeFilters["yesterday"]}},
-			bson.D{{Key: "$group", Value: bson.M{"_id": 1, "count": bson.M{"$sum": 1}, "estimate": bson.M{"$sum": "$estimate"}, "actual": bson.M{"$sum": "$actual"}}}},
+			timeMatch(todayStart, 0),
+			allGroup,
 		},
 		"last7days": bson.A{
-			bson.D{{Key: "$match", Value: timeFilters["last7days"]}},
-			bson.D{{Key: "$group", Value: bson.M{"_id": 1, "count": bson.M{"$sum": 1}, "estimate": bson.M{"$sum": "$estimate"}, "actual": bson.M{"$sum": "$actual"}}}},
+			timeMatch(last7Start, todayStart),
+			allGroup,
 		},
-		"lastmonth": bson.A{
-			bson.D{{Key: "$match", Value: timeFilters["lastmonth"]}},
-			bson.D{{Key: "$group", Value: bson.M{"_id": 1, "count": bson.M{"$sum": 1}, "estimate": bson.M{"$sum": "$estimate"}, "actual": bson.M{"$sum": "$actual"}}}},
+		"lastMonth": bson.A{
+			timeMatch(last30Start, todayStart),
+			allGroup,
 		},
-		"settled": bson.A{
-			bson.D{{Key: "$match", Value: bson.M{"actual": bson.M{"$ne": 0}, "settled": bson.M{"$exists": true}}}},
-			bson.D{{Key: "$group", Value: bson.M{"_id": 1, "estimate": bson.M{"$sum": "$estimate"}, "actual": bson.M{"$sum": "$actual"}}}},
+		"all_time": bson.A{
+			allGroup,
 		},
-		"unsettled": bson.A{
-			bson.D{{Key: "$match", Value: bson.M{
-				"actual":       bson.M{"$ne": 0},
-				"settled":      bson.M{"$exists": false},
-				"created_time": bson.M{"$lt": cutoffTime},
+		// ===== 平台维度 =====
+		"by_site": bson.A{
+			siteGroup,
+		},
+		// ===== 交叉维度：site × 时段 =====
+		"cross": bson.A{
+			// 按 created_time 归类到 today / last7days / lastMonth
+			bson.D{{Key: "$addFields", Value: bson.M{
+				"period": bson.M{
+					"$switch": bson.M{
+						"branches": bson.A{
+							bson.M{"case": bson.M{"$gte": []interface{}{"$created_time", todayStart}}, "then": "today"},
+							bson.M{"case": bson.M{"$gte": []interface{}{"$created_time", last7Start}}, "then": "last7days"},
+							bson.M{"case": bson.M{"$gte": []interface{}{"$created_time", last30Start}}, "then": "lastMonth"},
+						},
+						"default": "_skip_",
+					},
+				},
 			}}},
-			bson.D{{Key: "$group", Value: bson.M{"_id": 1, "estimate": bson.M{"$sum": "$estimate"}, "actual": bson.M{"$sum": "$actual"}}}},
+			// 过滤掉不属于任何时段的文档
+			bson.D{{Key: "$match", Value: bson.M{"period": bson.M{"$ne": "_skip_"}}}},
+			// 按 site + period 分组
+			bson.D{{Key: "$group", Value: bson.M{
+				"_id":     bson.M{"site": "$site", "period": "$period"},
+				"orders":  bson.M{"$sum": 1},
+				"estimate": bson.M{"$sum": "$estimate"},
+				"actual":  bson.M{"$sum": "$actual"},
+			}}},
+			// 扁平化输出
+			bson.D{{Key: "$project", Value: bson.M{
+				"_id":      0,
+				"site":     "$_id.site",
+				"period":   "$_id.period",
+				"orders":   1,
+				"estimate": 1,
+				"actual":   1,
+			}}},
 		},
 	}
 
@@ -332,50 +370,54 @@ func handleFenyongDashboard(c *gin.Context) {
 
 	r := results[0]
 
-	// 构建 platform map
-	platforms := make(map[string]FenyongPlatformStats)
-	for _, p := range r.Platforms {
-		platforms[p.Site] = FenyongPlatformStats{Orders: p.Count, Estimate: p.Estimate, Actual: p.Actual}
+	// 提取单条 $group 聚合结果
+	first := func(arr []fgPeriod) FenyongStats {
+		if len(arr) > 0 {
+			return FenyongStats{Orders: arr[0].Orders, Estimate: arr[0].Estimate, Actual: arr[0].Actual}
+		}
+		return FenyongStats{}
 	}
+
+	// --- 时间维度 ---
+	byTime := map[string]FenyongStats{
+		"today":     first(r.Today),
+		"last7days": first(r.Last7Days),
+		"lastMonth": first(r.LastMonth),
+		"total":     first(r.AllTime),
+	}
+
+	// --- 平台维度 ---
+	bySite := make(map[string]FenyongStats)
+	for _, s := range r.BySite {
+		bySite[s.Site] = FenyongStats{Orders: s.Orders, Estimate: s.Estimate, Actual: s.Actual}
+	}
+	// 保证已知平台始终存在（即使无数据）
 	for _, s := range []string{"jd", "tb", "pdd"} {
-		if _, ok := platforms[s]; !ok {
-			platforms[s] = FenyongPlatformStats{}
+		if _, ok := bySite[s]; !ok {
+			bySite[s] = FenyongStats{}
 		}
+	}
+	// 平台维度的总计 = 全量总和
+	bySite["total"] = byTime["total"]
+
+	// --- 交叉维度 ---
+	cross := make([]FenyongCrossItem, 0, len(r.Cross))
+	for _, c := range r.Cross {
+		cross = append(cross, FenyongCrossItem{
+			Site:     c.Site,
+			Period:   c.Period,
+			Orders:   c.Orders,
+			Estimate: c.Estimate,
+			Actual:   c.Actual,
+		})
 	}
 
-	// 取第一个元素（$facet 内 $group 的结果数组）
-	firstPeriod := func(arr []fgPeriod) fgPeriod {
-		if len(arr) > 0 {
-			return arr[0]
-		}
-		return fgPeriod{}
-	}
-	firstAmount := func(arr []fgAmount) fgAmount {
-		if len(arr) > 0 {
-			return arr[0]
-		}
-		return fgAmount{}
-	}
-	today := firstPeriod(r.Today)
-	yesterday := firstPeriod(r.Yesterday)
-	last7 := firstPeriod(r.Last7Days)
-	lastMonth := firstPeriod(r.LastMonth)
-	settled := firstAmount(r.Settled)
-	unsettled := firstAmount(r.Unsettled)
-
-	dash := FenyongDashboard{
+	c.JSON(200, FenyongDashboard{
 		Success: true,
-		Platforms: platforms,
-		Today:       FenyongPeriodStats{Orders: today.Count, Estimate: today.Estimate, Actual: today.Actual},
-		Yesterday:   FenyongPeriodStats{Orders: yesterday.Count, Estimate: yesterday.Estimate, Actual: yesterday.Actual},
-		Last7Days:   FenyongPeriodStats{Orders: last7.Count, Estimate: last7.Estimate, Actual: last7.Actual},
-		LastMonth:   FenyongPeriodStats{Orders: lastMonth.Count, Estimate: lastMonth.Estimate, Actual: lastMonth.Actual},
-		TotalSettled:   settled.Estimate,
-		TotalUnsettled: unsettled.Estimate,
-		TotalOrders:    lastMonth.Count,
-	}
-
-	c.JSON(200, dash)
+		ByTime:  byTime,
+		BySite:  bySite,
+		Cross:   cross,
+	})
 }
 
 // ---------- 订单列表 ----------
@@ -590,7 +632,11 @@ func convertOrders(docs []bson.M) []FenyongOrder {
 		if bind, ok := item["bind"].(bson.M); ok {
 			if platform, ok := bind["platform"].(string); ok {
 				if userID, ok := bind["user_id"].(string); ok {
-					o.Bind = &FenyongBind{Platform: platform, UserID: userID}
+					b := &FenyongBind{Platform: platform, UserID: userID}
+					if userName, ok := bind["user_name"].(string); ok {
+						b.UserName = userName
+					}
+					o.Bind = b
 				}
 			}
 		}

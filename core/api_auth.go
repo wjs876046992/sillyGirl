@@ -199,7 +199,11 @@ func RequireAuth(c *gin.Context) {
 	if password == "" {
 		return
 	}
+	// 支持两种认证方式：Cookie token 和 X-Token header（移动端）
 	token, _ := c.Cookie("token")
+	if token == "" {
+		token = c.GetHeader("X-Token")
+	}
 	_, err := CheckAuth(token)
 	if err != nil && !checkTempAuth(token) {
 		c.JSON(401, map[string]interface{}{

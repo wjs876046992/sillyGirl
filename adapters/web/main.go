@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cdle/sillyplus/core"
+	"github.com/cdle/sillyplus/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -108,9 +109,17 @@ func init() {
 		initWebBot()
 		rid := ctx.Query("rid")
 		ctt := ctx.Query("ctt")
+		// 支持两种认证方式：Cookie token 和 X-Token header（移动端）
 		token, _ := ctx.Cookie("token")
+		if token == "" {
+			token = ctx.GetHeader("X-Token")
+		}
 		_, err := core.CheckAuth(token)
 		isAdmin := err == nil
+		// rid 为空时生成默认 ID
+		if rid == "" {
+			rid = "mobile_" + utils.GenUUID()[:8]
+		}
 		v, ok := webAdmins.Load(rid)
 		if ok {
 			if v.(bool) != isAdmin {

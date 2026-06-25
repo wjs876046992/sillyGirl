@@ -8,7 +8,11 @@ import (
 
 func init() {
 	// 获取可选的 platforms、bots、users、groups
+	// 支持参数：platform（平台筛选）、bot_id（机器人筛选）
 	GinApi(GET, "/api/chat/selects", RequireAuth, func(ctx *gin.Context) {
+		platformFilter := ctx.Query("platform")
+		botIDFilter := ctx.Query("bot_id")
+
 		platforms := map[string][]string{}
 		for _, plt := range getPltsArray() {
 			platforms[plt] = GetAdapterBotsID(plt)
@@ -19,20 +23,48 @@ func init() {
 			Label: "私聊",
 			Value: "",
 		}}
+
 		nickname.Foreach(func(b1, b2 []byte) error {
 			v := &Nickname{}
 			err := json.Unmarshal(b2, v)
 			if err == nil {
 				code := string(b1)
+
+				// 平台筛选
+				if platformFilter != "" && v.Platform != platformFilter {
+					return nil
+				}
+
+				// BotID 筛选
+				if botIDFilter != "" {
+					found := false
+					for _, bid := range v.BotsID {
+						if bid == botIDFilter {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return nil
+					}
+				}
+
+				// 跳过空昵称
+				if v.Value == "" {
+					return nil
+				}
+
 				if v.Group {
 					groupNames = append(groupNames, NicklabeL{
-						Label: v.Value + "(" + code + ")",
-						Value: code,
+						Label:    v.Value + "(" + code + ")",
+						Value:    code,
+						Platform: v.Platform,
 					})
 				} else {
 					userNames = append(userNames, NicklabeL{
-						Label: v.Value + "(" + code + ")",
-						Value: code,
+						Label:    v.Value + "(" + code + ")",
+						Value:    code,
+						Platform: v.Platform,
 					})
 				}
 			}

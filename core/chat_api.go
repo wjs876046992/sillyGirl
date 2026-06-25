@@ -62,9 +62,11 @@ func init() {
 					})
 				} else {
 					userNames = append(userNames, NicklabeL{
-						Label:    v.Value + "(" + code + ")",
-						Value:    code,
-						Platform: v.Platform,
+						Label:       v.Value + "(" + code + ")",
+						Value:       code,
+						Platform:    v.Platform,
+						Source:      v.Source,
+						SourceChats: v.SourceChats,
 					})
 				}
 			}

@@ -313,12 +313,20 @@ func initToHandleMessage() {
 			}
 
 			if uname != "" {
+				source := "private"
+				var sourceChats []string
+				if !utils.IsZeroOrEmpty(cid) {
+					source = "group"
+					sourceChats = []string{cid}
+				}
 				CreateNickName(&Nickname{
-					ID:       uid,
-					Group:    false,
-					Value:    uname,
-					Platform: imType,
-					BotsID:   []string{s.GetBotID()},
+					ID:          uid,
+					Group:       false,
+					Value:       uname,
+					Platform:    imType,
+					BotsID:      []string{s.GetBotID()},
+					Source:      source,
+					SourceChats: sourceChats,
 				})
 			}
 			if imType != "terminal" {

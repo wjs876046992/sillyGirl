@@ -1,6 +1,6 @@
 # sillyGirl Project Summary
 
-> Auto-generated for agent readability. Last updated: 2026-06-23
+> Auto-generated for agent readability. Last updated: 2026-06-25
 
 ## 1. Repository Overview
 
@@ -192,7 +192,7 @@ Plugin annotations parsed by `plugin_parse.go`:
 ## 6. CI/CD Pipeline
 
 ### GitHub Actions (`.github/workflows/build.yml`)
-- **Trigger**: Push to `v2.*` branches, PRs, or manual `workflow_dispatch`
+- **Trigger**: 仅 `workflow_dispatch`（手动触发），PR 和 merge 不再自动触发
 - **Jobs**:
   1. `timestamp`: Generate build timestamp + version base
   2. `build`: Cross-compile for 5 platforms (Linux amd64/arm64, macOS amd64/arm64, Windows amd64)
@@ -200,26 +200,20 @@ Plugin annotations parsed by `plugin_parse.go`:
   4. `release`: Create/update GitHub Release with all binaries
 
 - **Release modes**:
-  - Auto (push to v2.*): Creates pre-release with `-dev.{timestamp}` tag
-  - Manual (`workflow_dispatch`): Update existing release with provided `release_tag`
-  - On manual release: auto-deletes old pre-releases
-
-### release-dryrun.sh
-Run from `sillyGirl/` directory:
-```bash
-bash release-dryrun.sh
-```
-Phases:
-1. Pre-flight: gh CLI, remote, branch, clean status check
-2. Version bump: finds last non-dev tag (v2.1.x), increments patch
-3. Changelog: groups commits by feat/fix/chore/other, outputs to `/tmp/release_notes_V.md`
-4. Dry-run summary: prints all commands that would be executed (no actual changes)
+  - 留空 release_tag → 自动 dev build（pre-release，`-dev.{timestamp}` tag）
+  - 填写 release_tag → 正式 release，自动清理所有旧 pre-release + dev tags
 
 ### deploy-test.sh
-Remote deployment to PM2-managed instance:
+服务器端自动化部署脚本，支持备份 + 回滚 + 健康检查：
 ```bash
+# 1. 上传二进制（本地 make build 产物名：sillyplus）
+scp sillyplus pagermaid@192.168.1.12:/tmp/sillyplus.<版本号>
+
+# 2. 上传部署脚本
 scp deploy-test.sh pagermaid@192.168.1.12:/tmp/
-ssh pagermaid@192.168.1.12 "bash /tmp/deploy-test.sh /home/pagermaid/docker/sillyplus v2.1.6"
+
+# 3. 执行部署
+ssh pagermaid@192.168.1.12 "bash /tmp/deploy-test.sh <版本号>"
 ```
 Flow:
 1. Validate ELF binary
@@ -227,8 +221,11 @@ Flow:
 3. Stop pm2 process
 4. Replace binary
 5. Restart pm2
-6. Health check (online status)
-7. Auto-rollback on failure
+6. Wait 25s（服务器有 20s 延迟启动机制）
+7. Health check (online status)
+8. Auto-rollback on failure
+
+> **注意**：CI 产物名为 `sillyGirl_linux_amd64`，下载后需重命名为 `sillyplus` 再部署。
 
 ### install.sh
 One-click install (curl-based):
@@ -271,13 +268,14 @@ docker run -d \
 - **Plugin directory**: `plugins/` (created at runtime in working directory or `/data/plugins/` in Docker)
 - **Data directory**: `.sillyplus/` (config, DB, cache) or `/data/.sillyplus/` in Docker
 - **Node.js runtime**: `language/` in working directory or `/data/language/` in Docker
-- **Build output**: `sillyGirl_{os}_{arch}[.exe]`
+- **Build output**: 本地 `make build` → `sillyplus`；CI `go build` → `sillyGirl_{os}_{arch}[.exe]`
 - **Docker image**: `ntwck/sillygirl` (Docker Hub)
 - **Branch convention**: `v2.*` for release branches, `main` in workflow.yaml is outdated
 - **Tag convention**: `v2.1.x` (stable), `v2.1.x-dev.{timestamp}` (dev builds)
 
 ## 10. Things to Know
 
+- CI 简化为仅 `workflow_dispatch` 触发，PR 和 merge push 不再触发 CI。本地 `go build` 验证即可（代码无平台特定问题，交叉编译安全）。
 - `workflow.yaml` is **outdated** (uses old go-version v2, references cdle/sillyplus repo). The active CI is `.github/workflows/build.yml`.
 - QQ adapter exists (`adapters/qq/main.go`) but is commented out in `main.go`.
 - `adapters/pagermaid/sillyplus.py` is a Python-based adapter (for PagerMaid).

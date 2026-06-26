@@ -10,24 +10,48 @@ import (
 )
 
 type Nickname struct {
-	ID       string   `json:"i"`
-	Group    bool     `json:"g"`
-	Unix     int      `json:"u"`
-	Value    string   `json:"v"`
-	Platform string   `json:"p"`
-	BotsID   []string `json:"bs"`
+	ID          string   `json:"i"`
+	Group       bool     `json:"g"`
+	Unix        int      `json:"u"`
+	Value       string   `json:"v"`
+	Platform    string   `json:"p"`
+	BotsID      []string `json:"bs"`
+	Source      string   `json:"s"`   // 来源类型: private(私聊), group(群聊)
+	SourceChats []string `json:"sc"`  // 来源群ID列表（group时有值）
 }
 
 var nickname = MakeBucket("nickname")
 
 type NicklabeL struct {
-	Label    string `json:"label"`
-	Value    string `json:"value"`
-	Platform string `json:"platform"`
-	ChatName string `json:"chat_name"`
+	Label       string   `json:"label"`
+	Value       string   `json:"value"`
+	Platform    string   `json:"platform"`
+	ChatName    string   `json:"chat_name"`
+	Source      string   `json:"src"`
+	SourceChats []string `json:"src_chats"`
 }
 
 func CreateNickName(nick *Nickname) {
+	// 如果有新的群ID，合并到列表中
+	if len(nick.SourceChats) > 0 {
+		existing := &Nickname{ID: nick.ID}
+		nickname.First(existing)
+		if len(existing.SourceChats) > 0 {
+			// 合并去重
+			chatMap := map[string]bool{}
+			for _, c := range existing.SourceChats {
+				chatMap[c] = true
+			}
+			for _, c := range nick.SourceChats {
+				chatMap[c] = true
+			}
+			merged := []string{}
+			for c := range chatMap {
+				merged = append(merged, c)
+			}
+			nick.SourceChats = merged
+		}
+	}
 	nick.Unix = int(time.Now().Unix())
 	nickname.Create(nick)
 }
@@ -46,6 +70,7 @@ func init() {
 			group = false
 		}
 		platform := ctx.Query("platform")
+		source := ctx.Query("source") // 新增：按来源过滤 private, group
 		data := []NicklabeL{}
 		data2 := []NicklabeL{}
 		// if keyword != "" {
@@ -61,10 +86,16 @@ func init() {
 				if platform != "" && v.Platform != platform {
 					return nil
 				}
+				// 按来源过滤（只对用户有效）
+				if !group && source != "" && v.Source != source {
+					return nil
+				}
 				nl := NicklabeL{
-					ChatName: v.Value,
-					Value:    code,
-					Platform: v.Platform,
+					ChatName:    v.Value,
+					Value:       code,
+					Platform:    v.Platform,
+					Source:      v.Source,
+					SourceChats: v.SourceChats,
 				}
 				if !group {
 					nl.Label = fmt.Sprintf("%s(%s)", v.Value, code)

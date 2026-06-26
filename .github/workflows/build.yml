@@ -5,37 +5,10 @@ permissions:
   packages: write
 
 on:
-  push:
-    branches: [ v2.* ]
-    paths:
-      - 'core/**'
-      - 'proto3/**'
-      - 'main.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Dockerfile'
-      - '.dockerfile'
-      - 'Makefile'
-      - 'install.sh'
-      - '.github/workflows/build.yml'
-  pull_request:
-    branches: [ v2.* ]
-    paths:
-      - 'core/**'
-      - 'proto3/**'
-      - 'main.go'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Dockerfile'
-      - '.dockerfile'
-      - 'Makefile'
-      - 'install.sh'
-      - '.github/workflows/build.yml'
-  # 手动触发：发布正式版时补传二进制文件到指定 release
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag（留空则自动生成 分支名-时间戳）'
+        description: 'Release tag（留空则自动生成 dev 版本）'
         required: false
         type: string
 
@@ -137,19 +110,17 @@ jobs:
           echo "编译版本: $(cat core/compile_time.go)"
 
       - name: Build
-        if: github.event_name != 'pull_request' || (matrix.goos == 'linux' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64'))
         shell: bash
         run: |
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0             go build -ldflags "-s -w"             -o sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
 
       - name: UPX compress
-        if: matrix.upx && (github.event_name != 'pull_request' || matrix.goarch == 'amd64')
+        if: matrix.upx
         run: |
           sudo apt-get update && sudo apt-get install -y upx-ucl
           upx sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
 
       - name: Upload artifact
-        if: github.event_name != 'pull_request' || (matrix.goos == 'linux' && (matrix.goarch == 'amd64' || matrix.goarch == 'arm64'))
         uses: actions/upload-artifact@v4
         with:
           name: sillyGirl_${{ matrix.goos }}_${{ matrix.goarch }}
@@ -159,7 +130,6 @@ jobs:
   docker:
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v4
@@ -191,7 +161,7 @@ jobs:
             echo "${{ env.IMAGE_NAME }}:${MANUAL_TAG}" >> $GITHUB_OUTPUT
             echo "__EOF__" >> $GITHUB_OUTPUT
           else
-            # 自动构建（分支 push）→ dev，不覆盖 latest
+            # 留空 → dev build，不覆盖 latest
             echo "tags<<__EOF__" >> $GITHUB_OUTPUT
             echo "${{ env.IMAGE_NAME }}:dev" >> $GITHUB_OUTPUT
             echo "__EOF__" >> $GITHUB_OUTPUT
@@ -221,8 +191,6 @@ jobs:
   release:
     needs: [timestamp, build]
     runs-on: ubuntu-latest
-    # 仅在合并后运行，PR / workflow_dispatch 不做 release
-    if: github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v4
@@ -318,16 +286,19 @@ jobs:
             artifacts/sillyGirl_windows_amd64.exe
 
       - name: Clean up pre-release tags（正式版发布后清理 dev 构建）
-        if: steps.release.outputs.mode == 'update' && github.event_name == 'workflow_dispatch'
+        if: steps.release.outputs.mode == 'update'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "清理 pre-release release..."
+          echo "清理 pre-release release + tag..."
           gh release list --repo ${{ github.repository }} --limit 100 --json isPrerelease,tagName --jq '.[] | select(.isPrerelease) | .tagName' 2>/dev/null | while read tag; do
             if [ -n "$tag" ]; then
-              echo "删除: $tag"
+              echo "删除 release: $tag"
               gh release delete "$tag" --repo ${{ github.repository }} -y || true
+              echo "删除 git tag: $tag"
+              git tag -d "$tag" 2>/dev/null || true
+              git push origin --delete "$tag" 2>/dev/null || true
             fi
           done
           echo "清理完成"

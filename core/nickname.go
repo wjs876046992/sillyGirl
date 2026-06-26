@@ -32,26 +32,33 @@ type NicklabeL struct {
 }
 
 func CreateNickName(nick *Nickname) {
-	// 如果有新的群ID，合并到列表中
-	if len(nick.SourceChats) > 0 {
-		existing := &Nickname{ID: nick.ID}
-		nickname.First(existing)
-		if len(existing.SourceChats) > 0 {
-			// 合并去重
-			chatMap := map[string]bool{}
-			for _, c := range existing.SourceChats {
-				chatMap[c] = true
-			}
-			for _, c := range nick.SourceChats {
-				chatMap[c] = true
-			}
-			merged := []string{}
-			for c := range chatMap {
-				merged = append(merged, c)
-			}
-			nick.SourceChats = merged
+	// 查找已有的记录
+	existing := &Nickname{ID: nick.ID}
+	nickname.First(existing)
+
+	// 合并 Source：private 不会被 group 覆盖
+	if existing.ID != "" {
+		// 已有记录是 private，保持 private
+		if existing.Source == "private" {
+			nick.Source = "private"
 		}
+		// 否则使用新的值（nick.Source）
 	}
+
+	// 合并 SourceChats（共同群聊列表，去重）
+	chatMap := map[string]bool{}
+	for _, c := range existing.SourceChats {
+		chatMap[c] = true
+	}
+	for _, c := range nick.SourceChats {
+		chatMap[c] = true
+	}
+	merged := []string{}
+	for c := range chatMap {
+		merged = append(merged, c)
+	}
+	nick.SourceChats = merged
+
 	nick.Unix = int(time.Now().Unix())
 	nickname.Create(nick)
 }

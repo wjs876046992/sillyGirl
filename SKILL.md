@@ -5,6 +5,15 @@ description: 发布 sillyGirl 新版本的标准化流程。适用于 wjs8760469
 
 # sillyGirl Release Workflow
 
+## 分支管理规范
+
+- **主开发分支**：`v2.1`
+- **新功能开发**：从 `v2.1` 创建分支（如 `feature/xxx`），在分支上开发
+- **合并发布**：开发完成后合并回 `v2.1`，随 `v2.1` 发布新版本
+- **清理分支**：发布新版本后，删除已合并的开发分支（`git branch -d feature/xxx`）
+
+> ⚠️ 开发分支生命周期：`v2.1` → `feature/xxx` → 开发 → 合并 `v2.1` → 发版 → 删除分支
+
 ## 前置条件
 
 - 工作目录：项目根目录（sillyGirl 仓库）

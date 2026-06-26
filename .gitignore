@@ -1,5 +1,4 @@
 test
-sillyplus
 .vscode
 dev.go
 .DS_Store
@@ -16,11 +15,7 @@ yummy
 _*
 fanli_vip
 cable
-sillyplus.cache
-sillyplus.*
 main
-sillyplus.pid
-sillyGirl.pid
 gitee
 develop/wx
 develop/qinglong
@@ -39,16 +34,12 @@ plugins
 bin
 language
 .VSCodeCounter
-sillyGirl-*
 core/proto3/sillygirl*
 core/proto3/srpc*
 core/proto3/dist/
 
 # 构建依赖声明，无需锁定 npm 的 resolution
 proto3/package-lock.json
-sillyplus-linux-amd64
-sillyplus-darwin
-sillyplus-linux
-sillyGirl
-sillyGirl_linux_amd64
+sillyplus*
+sillyGirl*
 .claude/

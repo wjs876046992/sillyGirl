@@ -277,5 +277,6 @@ func Init() {
 	initFenyongAPI()
 	go initPluginList()
 	initPluginPublish()
+	InitPluginLogs()
 
 }

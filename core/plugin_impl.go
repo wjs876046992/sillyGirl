@@ -83,6 +83,7 @@ func (c *Console) Info(v ...interface{}) {
 	}
 	log := utils.FormatLog(v[0], v[1:]...)
 	logs.Info(log)
+	pluginLogs.WriteLog(c.UUID, "info", log)
 	Broadcast2WebUser(log, "info")
 }
 
@@ -97,6 +98,7 @@ func (c *Console) Debug(v ...interface{}) {
 	}
 	log := utils.FormatLog(v[0], v[1:]...)
 	logs.Debug(log)
+	pluginLogs.WriteLog(c.UUID, "debug", log)
 	Broadcast2WebUser(log, "debug")
 }
 
@@ -107,6 +109,7 @@ func (c *Console) Warn(v ...interface{}) {
 	log := utils.FormatLog(v[0], v[1:]...)
 	logs.Warn(log)
 	WritePluginMessage(c.UUID, "warn", log)
+	pluginLogs.WriteLog(c.UUID, "warn", log)
 	Broadcast2WebUser(log, "warn")
 }
 
@@ -117,6 +120,7 @@ func (c *Console) Error(v ...interface{}) {
 	log := utils.FormatLog(v[0], v[1:]...)
 	logs.Error(log)
 	WritePluginMessage(c.UUID, "error", log)
+	pluginLogs.WriteLog(c.UUID, "error", log)
 	Broadcast2WebUser(log, "error")
 }
 
@@ -126,6 +130,7 @@ func (c *Console) Log(v ...interface{}) {
 	}
 	log := utils.FormatLog(v[0], v[1:]...)
 	logs.Info(log)
+	pluginLogs.WriteLog(c.UUID, "log", log)
 	Broadcast2WebUser(log, "log")
 }
 

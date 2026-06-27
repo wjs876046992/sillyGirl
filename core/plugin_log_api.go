@@ -31,12 +31,13 @@ func requireLogAuth(c *gin.Context) {
 
 // initPluginLogAPI 初始化插件日志API
 func initPluginLogAPI() {
-	// 获取插件日志（需要登录）
+	// 获取插件日志（需要登录，支持分页）
 	GinApi(GET, "/api/plugin/logs", requireLogAuth, func(ctx *gin.Context) {
 		uuid := ctx.Query("uuid")
 		level := ctx.Query("level")      // 可选：info/debug/warn/error/log
 		since := ctx.Query("since")      // 可选：时间戳
-		limit := ctx.Query("limit")      // 可选：数量限制，默认100
+		page := ctx.Query("page")        // 可选：页码，默认1
+		pageSize := ctx.Query("pageSize") // 可选：每页数量，默认50
 
 		if uuid == "" {
 			ctx.JSON(400, map[string]interface{}{
@@ -51,19 +52,30 @@ func initPluginLogAPI() {
 			sinceInt, _ = strconv.ParseInt(since, 10, 64)
 		}
 
-		limitInt := 100
-		if limit != "" {
-			if v, err := strconv.Atoi(limit); err == nil {
-				limitInt = v
+		pageInt := 1
+		if page != "" {
+			if v, err := strconv.Atoi(page); err == nil && v > 0 {
+				pageInt = v
 			}
 		}
 
-		plogs := pluginLogs.GetLogs(uuid, level, sinceInt, limitInt)
+		pageSizeInt := 50
+		if pageSize != "" {
+			if v, err := strconv.Atoi(pageSize); err == nil && v > 0 {
+				pageSizeInt = v
+			}
+		}
+
+		offset := (pageInt - 1) * pageSizeInt
+		total := pluginLogs.CountLogs(uuid, level, sinceInt)
+		plogs := pluginLogs.GetLogs(uuid, level, sinceInt, offset, pageSizeInt)
 
 		ctx.JSON(200, map[string]interface{}{
-			"success": true,
-			"data":    plogs,
-			"total":   len(plogs),
+			"success":  true,
+			"data":     plogs,
+			"total":    total,
+			"page":     pageInt,
+			"pageSize": pageSizeInt,
 		})
 	})
 
@@ -90,7 +102,7 @@ func initPluginLogAPI() {
 			if f.UUID == "" {
 				continue
 			}
-			plogs := pluginLogs.GetLogs(f.UUID, level, sinceInt, limitInt)
+			plogs := pluginLogs.GetLogs(f.UUID, level, sinceInt, 0, limitInt)
 			if len(plogs) > 0 {
 				result[f.UUID] = map[string]interface{}{
 					"title":  f.Title,

@@ -80,8 +80,8 @@ func (s *PluginLogStore) WriteLog(uuid, level, content string) {
 	s.setLogs(uuid, plogs)
 }
 
-// GetLogs 获取插件日志（支持过滤）
-func (s *PluginLogStore) GetLogs(uuid, level string, since int64, limit int) []PluginLog {
+// GetLogs 获取插件日志（支持过滤、分页）
+func (s *PluginLogStore) GetLogs(uuid, level string, since int64, offset, limit int) []PluginLog {
 	if uuid == "" {
 		return nil
 	}
@@ -89,7 +89,7 @@ func (s *PluginLogStore) GetLogs(uuid, level string, since int64, limit int) []P
 	plogs := s.getLogs(uuid)
 	now := time.Now().Unix()
 
-	var result []PluginLog
+	var filtered []PluginLog
 	for i := len(plogs) - 1; i >= 0; i-- { // 倒序遍历，最新的在前
 		plog := plogs[i]
 
@@ -108,15 +108,45 @@ func (s *PluginLogStore) GetLogs(uuid, level string, since int64, limit int) []P
 			continue
 		}
 
-		result = append(result, plog)
-
-		// 数量限制
-		if limit > 0 && len(result) >= limit {
-			break
-		}
+		filtered = append(filtered, plog)
 	}
 
-	return result
+	// 分页：offset + limit
+	total := len(filtered)
+	if offset >= total {
+		return []PluginLog{}
+	}
+	end := offset + limit
+	if limit <= 0 || end > total {
+		end = total
+	}
+	return filtered[offset:end]
+}
+
+// CountLogs 统计插件日志数量（支持级别和时间过滤）
+func (s *PluginLogStore) CountLogs(uuid, level string, since int64) int {
+	if uuid == "" {
+		return 0
+	}
+
+	plogs := s.getLogs(uuid)
+	now := time.Now().Unix()
+	count := 0
+
+	for i := len(plogs) - 1; i >= 0; i-- {
+		plog := plogs[i]
+		if now-plog.Unix > int64(s.expireSec) {
+			continue
+		}
+		if level != "" && plog.Level != level {
+			continue
+		}
+		if since > 0 && plog.Unix < since {
+			continue
+		}
+		count++
+	}
+	return count
 }
 
 // GetStats 获取日志统计

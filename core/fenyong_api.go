@@ -181,7 +181,7 @@ func getSiteImage(site string) string {
 // getGoodsImage 从 MongoDB 订单记录中提取商品图片 URL
 // 拼多多: doc.data.goods_thumbnail_url
 // 淘宝: doc.data.item_img
-// 京东: 无商品图片字段
+// 京东: doc.data.skuImg（由京东订单更新插件从转链记录补充）
 func getGoodsImage(site string, doc bson.M) string {
 	raw := doc["data"]
 	if raw == nil {
@@ -202,6 +202,8 @@ func getGoodsImage(site string, doc bson.M) string {
 		key = "goods_thumbnail_url"
 	case "tb":
 		key = "item_img"
+	case "jd":
+		key = "skuImg"
 	default:
 		return ""
 	}

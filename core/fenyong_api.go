@@ -611,6 +611,10 @@ func convertOrders(docs []bson.M) []FenyongOrder {
 			if o.Image == "" {
 				if d, _ := item["data"].(bson.M); d != nil {
 					switch site {
+					case "jd":
+						if img, _ := d["skuImg"].(string); img != "" {
+							o.Image = img
+						}
 					case "pdd":
 						if img, _ := d["goods_thumbnail_url"].(string); img != "" {
 							o.Image = img

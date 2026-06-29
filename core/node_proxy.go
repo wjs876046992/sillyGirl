@@ -23,20 +23,21 @@ import (
 // 当 Node 插件声明 @http 路由时，自动分配端口、启动子进程、注册 Gin 反向代理
 
 type nodeProxyEntry struct {
-	UUID     string
-	Port     int
-	Cmd      *exec.Cmd
+	UUID       string
+	Port       int
+	Cmd        *exec.Cmd
 	RouteCount int
-	Proxy    *httputil.ReverseProxy
-	StopChan chan struct{}
+	Proxy      *httputil.ReverseProxy
+	StopChan   chan struct{}
 }
 
 var (
-	nodeProxies   sync.Map // uuid → *nodeProxyEntry
-	usedPorts     sync.Map // port → true
-	portMutex     sync.Mutex
-	proxyBasePort = 40000
-	proxyMaxPort  = 50000
+	nodeProxies     sync.Map // uuid → *nodeProxyEntry
+	usedPorts       sync.Map // port → true
+	reloadingPlugins sync.Map // uuid → true, 标记正在重载的插件，防止后台 goroutine 清理
+	portMutex       sync.Mutex
+	proxyBasePort   = 40000
+	proxyMaxPort    = 50000
 )
 
 // StartNodeProxy 启动 Node 插件的反向代理
@@ -127,6 +128,10 @@ func StartNodeProxy(f *common.Function) {
 	// 监听进程退出，自动清理
 	go func() {
 		cmd.Wait()
+		// 如果正在重载，不清理（由 RestartNodeProxy 处理）
+		if _, reloading := reloadingPlugins.Load(uuid); reloading {
+			return
+		}
 		// 进程意外退出
 		if _, ok := nodeProxies.Load(uuid); ok {
 			logs.Warn("插件 [%s] 进程已退出，清理反向代理路由", f.Title)
@@ -165,34 +170,101 @@ func StopNodeProxy(uuid string) {
 }
 
 // RestartNodeProxy 重启 Node 插件反向代理（重载时调用，保留端口和路由）
-func RestartNodeProxy(uuid string) {
+// 如果找不到旧的反向代理记录，则启动新的反向代理
+func RestartNodeProxy(f *common.Function) {
+	uuid := f.UUID
 	v, ok := nodeProxies.Load(uuid)
 	if !ok {
+		// 找不到旧记录，可能是初次启动失败，启动新的反向代理
+		logs.Info("插件 [%s] 未找到旧的反向代理记录，尝试启动新的反向代理", f.Title)
+		StartNodeProxy(f)
 		return
 	}
 	entry := v.(*nodeProxyEntry)
+	port := entry.Port
+
+	// 标记为正在重载，防止旧进程退出时后台 goroutine 清理路由和端口
+	reloadingPlugins.Store(uuid, true)
+	defer reloadingPlugins.Delete(uuid)
 
 	// 杀掉旧进程
 	if entry.Cmd != nil && entry.Cmd.Process != nil {
 		entry.Cmd.Process.Kill()
 	}
 
-	// 重置 stop 信号
-	entry.StopChan = make(chan struct{})
+	// 等待旧进程退出，释放端口（最多等 3 秒）
+	for i := 0; i < 15; i++ {
+		time.Sleep(200 * time.Millisecond)
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			ln.Close()
+			break
+		}
+	}
 
-	// 更新 Proxy 的目标（端口不变，但需要新连接）
+	// 启动新进程，监听同一端口
+	bin := GetNodeBin()
+	cmd := exec.Command(bin, f.Path)
+	cmd.Dir = filepath.Dir(f.Path)
+	cmd.Env = append(os.Environ(),
+		"PLUGIN_ID="+uuid,
+		"RUNTIME_ID="+utils.GenUUID(),
+		"HTTP_LISTEN_PORT="+fmt.Sprint(port),
+	)
+
+	// 捕获 stdout/stderr
+	stdout, err := cmd.StdoutPipe()
+	if err == nil {
+		go io.Copy(consoleLogWriter(uuid, "stdout"), stdout)
+	}
+	stderr, err2 := cmd.StderrPipe()
+	if err2 == nil {
+		go io.Copy(consoleLogWriter(uuid, "stderr"), stderr)
+	}
+
+	if err := cmd.Start(); err != nil {
+		logs.Error("重启 Node 插件 [%s] 失败: %s", f.Title, err.Error())
+		StopNodeProxy(uuid)
+		return
+	}
+
+	// 等待端口就绪（最长 5 秒）
+	ready := waitForPort(port, 5*time.Second)
+	if !ready {
+		logs.Error("插件 [%s] HTTP 服务未在 5 秒内就绪，已终止", f.Title)
+		cmd.Process.Kill()
+		StopNodeProxy(uuid)
+		return
+	}
+
+	// 更新反向代理指向新进程
 	targetURL := &url.URL{
 		Scheme: "http",
-		Host:   fmt.Sprintf("127.0.0.1:%d", entry.Port),
+		Host:   fmt.Sprintf("127.0.0.1:%d", port),
 	}
 	entry.Proxy = httputil.NewSingleHostReverseProxy(targetURL)
-
-	// 路由已经在第一次注册时存在，不需要重新注册
-	// Gin 不支持删除路由，但 recover 会跳过冲突
-	// 新进程启动后会监听同一端口，反向代理自动指向新进程
-
+	entry.Cmd = cmd
+	entry.StopChan = make(chan struct{})
 	nodeProxies.Store(uuid, entry)
-	logs.Info("已重启插件 [%s] 反向代理 (端口 %d, 保留路由)", entry.UUID, entry.Port)
+
+	// 监听新进程退出，自动清理
+	// 注意：这里不需要检查 reloadingPlugins，因为这是新进程的 goroutine
+	// reloadingPlugins 只用于防止旧进程退出时旧 goroutine 的清理
+	// 但需要检查 entry.Cmd 是否仍指向本进程，防止二次重载时误清理新条目
+	go func() {
+		cmd.Wait()
+		if v, ok := nodeProxies.Load(uuid); ok {
+			current := v.(*nodeProxyEntry)
+			if current.Cmd != cmd {
+				// entry 已被更新（发生了二次重载），不清理
+				return
+			}
+			logs.Warn("插件 [%s] 进程已退出，清理反向代理路由", f.Title)
+			StopNodeProxy(uuid)
+		}
+	}()
+
+	logs.Info("已重启插件 [%s] 反向代理 (端口 %d, 保留路由)", f.Title, port)
 }
 
 // StopAllNodeProxies 停止所有 Node 插件反向代理（傻妞关闭时调用）
@@ -238,12 +310,19 @@ func waitForPort(port int, timeout time.Duration) bool {
 }
 
 // registerProxyRoute 注册单个反向代理路由到 Gin
+// handler 通过 uuid 动态查找当前 proxy，这样重载后旧路由自动指向新进程
 func registerProxyRoute(uuid string, route common.Http, proxy *httputil.ReverseProxy) {
 	method := route.Method
 	path := route.Path
 
 	handler := func(c *gin.Context) {
-		proxy.ServeHTTP(c.Writer, c.Request)
+		v, ok := nodeProxies.Load(uuid)
+		if !ok {
+			c.String(http.StatusBadGateway, "502: plugin proxy not available")
+			return
+		}
+		entry := v.(*nodeProxyEntry)
+		entry.Proxy.ServeHTTP(c.Writer, c.Request)
 	}
 
 	// 避免重复注册导致 panic，用 recover 兜底

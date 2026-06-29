@@ -289,7 +289,15 @@ func AddNodePlugin(path, name, class string) error {
 			CancelPluginWebs(uuid)
 			CancelPluginlistening(uuid)
 			CancelHttpListen(uuid)
-			StopNodeProxy(uuid)
+			// 对于 Node 插件，不调用 StopNodeProxy，而是在后面调用 RestartNodeProxy
+			// 这样可以保留端口和路由信息
+			if len(Functions[i].Https) > 0 && Functions[i].Type == "node" {
+				// 提前标记为正在重载，防止旧进程退出时后台 goroutine 清理反向代理路由和端口
+				// （必须在杀进程之前设置，否则 goroutine 可能在 flag 设置前就触发清理）
+				reloadingPlugins.Store(uuid, true)
+			} else {
+				StopNodeProxy(uuid)
+			}
 			remStatic(uuid)
 			// 终止旧的 node/python 进程
 			processes.Range(func(key, value any) bool {
@@ -507,8 +515,8 @@ func AddNodePlugin(path, name, class string) error {
 			// 首次加载：分配端口，注册路由
 			StartNodeProxy(f)
 		} else {
-			// 重载：只重启进程，保留端口和路由
-			RestartNodeProxy(uuid)
+			// 重载：重启进程，保留端口和路由；如果旧记录不存在则启动新的
+			RestartNodeProxy(f)
 			console.Log("已重载 %s%s", f.Title, f.Suffix)
 		}
 	}

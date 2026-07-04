@@ -78,6 +78,7 @@ type FenyongOrder struct {
 	Site        string                 `json:"site"`
 	Platform    string                 `json:"platform"`
 	CreatedTime int64                  `json:"created_time"`
+	UpdatedTime int64                  `json:"updated_time"`
 	OrderID     string                 `json:"order_id"`
 	SkuID       string                 `json:"sku_id"`
 }
@@ -597,6 +598,18 @@ func convertOrders(docs []bson.M) []FenyongOrder {
 			o.CreatedTime = int64(ct)
 		case primitive.DateTime:
 			o.CreatedTime = ct.Time().Unix()
+		}
+
+		// updated_time 可能是 int64 / primitive.DateTime / float64 / int32
+		switch ut := item["updated_time"].(type) {
+		case int64:
+			o.UpdatedTime = ut
+		case int32:
+			o.UpdatedTime = int64(ut)
+		case float64:
+			o.UpdatedTime = int64(ut)
+		case primitive.DateTime:
+			o.UpdatedTime = ut.Time().Unix()
 		}
 
 		if site, ok := item["site"].(string); ok {

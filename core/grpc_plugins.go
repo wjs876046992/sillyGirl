@@ -379,11 +379,9 @@ func AddNodePlugin(path, name, class string) error {
 		switch class {
 		case NODE:
 			bin = GetNodeBin()
-			console.Debug("Node 插件 [%s] 启动, bin=%s", name, bin)
 			cmd = exec.Command(bin, path)
 		case PYTHON:
 			bin = "python3"
-			console.Debug("Python 插件 [%s] 启动", name)
 			cmd = exec.Command(bin, "-u", path)
 			cmd.Env = append(os.Environ(), "PYTHONPATH="+utils.ExecPath+"/proto3")
 		}
@@ -459,8 +457,6 @@ func AddNodePlugin(path, name, class string) error {
 			err = cmd.Start()
 			if err != nil {
 				console.Error("Node 插件 [%s] 启动失败: %v", name, err)
-			} else {
-				console.Debug("Node 插件 [%s] 子进程 PID=%d", name, cmd.Process.Pid)
 			}
 			defer deleteSenderRegister(RUNTIME_ID)
 			defer processes.Delete(cmd)
@@ -470,13 +466,10 @@ func AddNodePlugin(path, name, class string) error {
 				console.Warn("Node 插件 [%s] 退出: %v", name, err)
 				return nil
 			}
-			console.Debug("Node 插件 [%s] 正常退出", name)
 		} else {
 			err = cmd.Start()
 			if err != nil {
 				console.Error("Node 插件 [%s] 启动失败: %v", name, err)
-			} else {
-				console.Debug("Node 插件 [%s] 子进程 PID=%d", name, cmd.Process.Pid)
 			}
 			processes.Range(func(key, value any) bool {
 				p := key.(*exec.Cmd)

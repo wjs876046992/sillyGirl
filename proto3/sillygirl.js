@@ -695,37 +695,38 @@ let utils = {
     },
 };
 exports.utils = utils;
+const _nativeLog = console.log;
+const _nativeError = console.error;
+const _nativeDebug = console.debug;
+function _sendWithRetry(type, content, retries = 1) {
+    client.Console(new srpc_1.srpc.ConsoleRequest({
+        type,
+        content,
+        plugin_id,
+    }), (err, resp) => {
+        if (err && retries > 0) {
+            setTimeout(() => _sendWithRetry(type, content, retries - 1), 100);
+        } else if (err) {
+            _nativeError(`[gRPC Console ${type} failed]`, content);
+        }
+    });
+}
 let console = {
     log(...args) {
-        client.Console(new srpc_1.srpc.ConsoleRequest({
-            type: "log",
-            content: (0, util_1.format)(...args),
-            plugin_id,
-        }), (err, resp) => { });
+        const content = (0, util_1.format)(...args);
+        _sendWithRetry("log", content);
     },
     info(...args) {
-        const content = args.reduce((acc, arg) => acc + " " + arg, "");
-        client.Console(new srpc_1.srpc.ConsoleRequest({
-            type: "info",
-            content: (0, util_1.format)(...args),
-            plugin_id,
-        }), (err, resp) => { });
+        const content = (0, util_1.format)(...args);
+        _sendWithRetry("info", content);
     },
     error(...args) {
-        const content = args.reduce((acc, arg) => acc + " " + arg, "");
-        client.Console(new srpc_1.srpc.ConsoleRequest({
-            type: "error",
-            content: (0, util_1.format)(...args),
-            plugin_id,
-        }), (err, resp) => { });
+        const content = (0, util_1.format)(...args);
+        _sendWithRetry("error", content);
     },
     debug(...args) {
-        const content = args.reduce((acc, arg) => acc + " " + arg, "");
-        client.Console(new srpc_1.srpc.ConsoleRequest({
-            type: "debug",
-            content: (0, util_1.format)(...args),
-            plugin_id,
-        }), (err, resp) => { });
+        const content = (0, util_1.format)(...args);
+        _sendWithRetry("debug", content);
     },
 };
 exports.console = console;

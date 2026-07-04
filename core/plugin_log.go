@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -63,23 +64,23 @@ func (s *PluginLogStore) WriteLog(uuid, level, content string) {
 		PluginName: getTitle(f),
 	}
 
+	// 优先 MongoDB
+	if coll, err := getPluginLogCollection(); err == nil {
+		s.writeLogMongo(coll, plog)
+		return
+	}
+
+	// 降级 Redis
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 获取现有日志
 	plogs := s.getLogs(uuid)
-
-	// 去重检查（相似度>0.9的合并）
 	if !s.deduplicate(plogs, plog) {
 		plogs = append(plogs, plog)
 	}
-
-	// 限制最大数量（每个插件最多1000条）
 	if len(plogs) > 1000 {
 		plogs = plogs[len(plogs)-1000:]
 	}
-
-	// 保存
 	s.setLogs(uuid, plogs)
 }
 
@@ -89,6 +90,12 @@ func (s *PluginLogStore) GetLogs(uuid, level string, since int64, offset, limit 
 		return nil
 	}
 
+	// 优先 MongoDB
+	if coll, err := getPluginLogCollection(); err == nil {
+		return s.getLogsMongo(coll, uuid, level, since, offset, limit)
+	}
+
+	// 降级 Redis
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -96,28 +103,24 @@ func (s *PluginLogStore) GetLogs(uuid, level string, since int64, offset, limit 
 	now := time.Now().Unix()
 
 	var filtered []PluginLog
-	for i := len(plogs) - 1; i >= 0; i-- { // 倒序遍历，最新的在前
+	for i := len(plogs) - 1; i >= 0; i-- {
 		plog := plogs[i]
-
-		// 过期检查
 		if now-plog.Unix > int64(s.expireSec) {
 			continue
 		}
-
-		// 级别过滤
 		if level != "" && plog.Level != level {
 			continue
 		}
-
-		// 时间过滤
 		if since > 0 && plog.Unix < since {
 			continue
 		}
-
 		filtered = append(filtered, plog)
 	}
 
-	// 分页：offset + limit
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Unix > filtered[j].Unix
+	})
+
 	total := len(filtered)
 	if offset >= total {
 		return []PluginLog{}
@@ -135,10 +138,15 @@ func (s *PluginLogStore) CountLogs(uuid, level string, since int64) int {
 		return 0
 	}
 
+	// 优先 MongoDB
+	if coll, err := getPluginLogCollection(); err == nil {
+		return s.countLogsMongo(coll, uuid, level, since)
+	}
+
+	// 降级 Redis
 	plogs := s.getLogs(uuid)
 	now := time.Now().Unix()
 	count := 0
-
 	for i := len(plogs) - 1; i >= 0; i-- {
 		plog := plogs[i]
 		if now-plog.Unix > int64(s.expireSec) {
@@ -164,26 +172,36 @@ func (s *PluginLogStore) GetStats(uuid string) *PluginLogStats {
 		}
 	}
 
+	// 优先 MongoDB
+	if coll, err := getPluginLogCollection(); err == nil {
+		return s.getStatsMongo(coll, uuid)
+	}
+
+	// 降级 Redis
 	plogs := s.getLogs(uuid)
 	now := time.Now().Unix()
 	stats := &PluginLogStats{
 		ByLevel: map[string]int{},
 	}
-
 	for _, plog := range plogs {
-		// 过期检查
 		if now-plog.Unix > int64(s.expireSec) {
 			continue
 		}
 		stats.Total++
 		stats.ByLevel[plog.Level]++
 	}
-
 	return stats
 }
 
 // CleanExpired 清理过期日志
 func (s *PluginLogStore) CleanExpired() {
+	// 优先 MongoDB
+	if coll, err := getPluginLogCollection(); err == nil {
+		s.cleanExpiredMongo(coll)
+		return
+	}
+
+	// 降级 Redis
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -196,25 +214,20 @@ func (s *PluginLogStore) CleanExpired() {
 
 	cleaned := 0
 	for _, key := range keys {
-		// 跳过非日志key（UUID长度为36）
 		if len(key) < 36 {
 			continue
 		}
-
 		plogs := s.getLogsRaw(key)
 		if plogs == nil {
 			continue
 		}
-
 		var valid []PluginLog
 		for _, plog := range plogs {
 			if now-plog.Unix <= int64(s.expireSec) {
 				valid = append(valid, plog)
 			}
 		}
-
 		if len(valid) == 0 {
-			// 创建一个新的bucket来删除key
 			bkt := s.bucket.Copy(key)
 			bkt.Delete()
 			cleaned++
@@ -266,13 +279,10 @@ func (s *PluginLogStore) setLogsRaw(key string, plogs []PluginLog) {
 }
 
 func (s *PluginLogStore) deduplicate(plogs []PluginLog, new PluginLog) bool {
-	strs := &Strings{}
 	for i := range plogs {
-		if plogs[i].Level == new.Level {
-			if strs.Similarity(plogs[i].Content, new.Content) > 0.9 {
-				plogs[i] = new
-				return true
-			}
+		if plogs[i].Level == new.Level && plogs[i].Content == new.Content {
+			plogs[i] = new
+			return true
 		}
 	}
 	return false

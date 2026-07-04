@@ -63,6 +63,9 @@ func (s *PluginLogStore) WriteLog(uuid, level, content string) {
 		PluginName: getTitle(f),
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// 获取现有日志
 	plogs := s.getLogs(uuid)
 
@@ -85,6 +88,9 @@ func (s *PluginLogStore) GetLogs(uuid, level string, since int64, offset, limit 
 	if uuid == "" {
 		return nil
 	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	plogs := s.getLogs(uuid)
 	now := time.Now().Unix()

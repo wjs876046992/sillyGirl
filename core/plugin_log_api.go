@@ -21,11 +21,11 @@ func requireLogAuth(c *gin.Context) {
 
 	_, err := CheckAuth(token)
 	if err != nil {
-		c.JSON(401, map[string]interface{}{
+		c.AbortWithStatusJSON(401, map[string]interface{}{
 			"success": false,
 			"error":   "请先登录",
 		})
-		panic(err)
+		return
 	}
 }
 

@@ -14,6 +14,9 @@ func initReboot() {
 		if v := string(data); v != "" {
 			defer os.RemoveAll(utils.ExecPath + "/rebootInfo")
 			vv := strings.Split(v, " ")
+			if len(vv) < 3 {
+				return
+			}
 			tp, cd, ud := vv[0], vv[1], vv[2]
 			if tp == "fake" {
 				return
@@ -21,15 +24,16 @@ func initReboot() {
 			msg := "重启完成"
 			for i := 0; i < 10; i++ {
 				dapter, _ := GetAdapter(tp, "")
-				if dapter != nil {
-					break
+				if dapter == nil {
+					time.Sleep(time.Second)
+					continue
 				}
 				dapter.Push(Message{
 					USER_ID: ud,
 					CHAT_ID: cd,
 					CONETNT: msg,
 				})
-				time.Sleep(time.Second)
+				break
 			}
 		}
 	}()

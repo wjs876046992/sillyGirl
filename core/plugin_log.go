@@ -144,7 +144,9 @@ func (s *PluginLogStore) CountLogs(uuid, level string, since int64) int {
 	}
 
 	// 降级 Redis
+	s.mu.RLock()
 	plogs := s.getLogs(uuid)
+	s.mu.RUnlock()
 	now := time.Now().Unix()
 	count := 0
 	for i := len(plogs) - 1; i >= 0; i-- {
@@ -178,7 +180,9 @@ func (s *PluginLogStore) GetStats(uuid string) *PluginLogStats {
 	}
 
 	// 降级 Redis
+	s.mu.RLock()
 	plogs := s.getLogs(uuid)
+	s.mu.RUnlock()
 	now := time.Now().Unix()
 	stats := &PluginLogStats{
 		ByLevel: map[string]int{},

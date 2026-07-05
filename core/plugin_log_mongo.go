@@ -24,10 +24,10 @@ type PluginLogDoc struct {
 }
 
 var (
-	pluginLogDB   *mongo.Database
-	pluginLogMu   sync.Mutex
-	pluginLogCtx  = context.TODO()
+	pluginLogDB    *mongo.Database
+	pluginLogMu    sync.Mutex
 	pluginLogReady bool
+	pluginLogCtx   = context.Background()
 )
 
 // getPluginLogCollection 获取日志集合，未配置或失败返回 (nil, error)
@@ -52,7 +52,12 @@ func getPluginLogCollection() (*mongo.Collection, error) {
 		return nil, fmt.Errorf("MongoDB not configured")
 	}
 
-	client, e := mongo.Connect(pluginLogCtx, options.Client().ApplyURI(mongodbURL))
+	clientOpts := options.Client().
+		ApplyURI(mongodbURL).
+		SetServerSelectionTimeout(5 * time.Second).
+		SetSocketTimeout(10 * time.Second).
+		SetConnectTimeout(5 * time.Second)
+	client, e := mongo.Connect(pluginLogCtx, clientOpts)
 	if e != nil {
 		logs.Warn("插件日志 MongoDB 连接失败: %v，降级到 Redis", e)
 		return nil, e

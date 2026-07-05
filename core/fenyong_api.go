@@ -23,7 +23,7 @@ import (
 var (
 	fanyongDB   *mongo.Database
 	fanyongOnce sync.Once
-	fanyongCtx  = context.TODO()
+	fanyongCtx  = context.Background()
 )
 
 func getFanyongCollection() (*mongo.Collection, error) {
@@ -38,7 +38,12 @@ func getFanyongCollection() (*mongo.Collection, error) {
 			err = fmt.Errorf("未配置 MongoDB 地址 (fanli.mongodb)")
 			return
 		}
-		client, e := mongo.Connect(fanyongCtx, options.Client().ApplyURI(mongodbURL))
+		clientOpts := options.Client().
+			ApplyURI(mongodbURL).
+			SetServerSelectionTimeout(5 * time.Second).
+			SetSocketTimeout(10 * time.Second).
+			SetConnectTimeout(5 * time.Second)
+		client, e := mongo.Connect(fanyongCtx, clientOpts)
 		if e != nil {
 			err = fmt.Errorf("MongoDB 连接失败: %w", e)
 			return
